@@ -1,6 +1,6 @@
 # 🧮 Deep Calculator
 
-**Sürüm:** 2.0.0  
+**Sürüm:** 2.0.1
 **Geliştirici:** Izzmoo  
 **İletişim:** IzzmooPro@gmail.com  
 **Lisans:** Ücretsiz — kişisel ve ticari kullanım  
@@ -227,7 +227,7 @@ Program zaten açıksa Windows'ta mevcut pencere öne getirilir (`FindWindowW` i
 |---|---|---|
 | `ORG` | `str` | Organizasyon adı (`"DeepCalc"`) |
 | `APP` | `str` | Uygulama adı (`"Calculator"`) |
-| `VERSION` | `str` | Sürüm (`"2.0.0"`) |
+| `VERSION` | `str` | Sürüm (`"2.0.1"`) |
 | `WINDOW_TITLE` | `str` | Pencere başlığı — tek yerde tanımlı |
 | `DEFAULT_W/H` | `int` | Varsayılan pencere boyutu (320×500) |
 | `CORNER_HIT` | `int` | Köşe çift-tık hassasiyeti (px) |
@@ -402,6 +402,10 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 ---
 
 ## 📝 Değişiklik Geçmişi
+
+### v2.0.1 — 2026
+- Sürüm numarası güncellendi
+- Küçük iyileştirmeler ve hata düzeltmeleri
 
 ### v2.0.0 — 2026
 - Dört işlem, bilimsel fonksiyonlar, bellek, geçmiş, tema, klavye desteği
