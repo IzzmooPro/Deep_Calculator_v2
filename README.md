@@ -117,15 +117,20 @@ Deep_Calculator_v2/
 │   ├── __init__.py          # Katman public API'si
 │   ├── constants.py         # Sabitler, OPS, FUNCTIONS, KEY_MAP, ALLOWED_NODES
 │   ├── engine.py            # CalculatorEngine + CalculatorState
-│   └── formatter.py         # Türkçe sayı formatlama fonksiyonları
+│   ├── formatter.py         # Türkçe sayı formatlama / okuma fonksiyonları
+│   ├── i18n.py              # Çeviriler (tr, en, de, fr, es)
+│   └── updater.py           # GitHub üzerinden güncelleme kontrolü ve indirme
 │
 ├── ui/                      # Arayüz katmanı
 │   ├── __init__.py          # Katman public API'si
 │   ├── window.py            # CalculatorWindow — ana pencere
 │   ├── grid_layout.py       # Buton ızgara tanımı (GRID listesi)
-│   ├── theme.py             # ThemePalette, LIGHT, DARK, btn_style()
+│   ├── theme.py             # ThemePalette, LIGHT, DARK, ortak stil yardımcıları
 │   ├── widgets.py           # AnimatedButton (QPushButton subclass)
+│   ├── dialogs.py           # Hakkında, Geri Bildirim, Güncelleme, İndirme diyalogları
 │   └── help_dialog.py       # Kullanım kılavuzu diyalogu
+│
+├── tests/                   # pytest birim testleri (engine, formatter, updater)
 │
 ├── assets/                  # Uygulama kaynakları
 │   ├── __init__.py          # Paket tanımı
@@ -431,6 +436,9 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 - Hata mesajları seçilen dile çevrilir
 - Güncelleme: kurulum dosyası seçimi düzeltildi, indirilen dosya SHA-256 ile doğrulanır, otomatik kurulum yalnızca Windows'ta
 - Düzeltme: Ara sonuçlar ekrandaki 12 basamağa yuvarlanmadan hesaplanır (`1/3 × 3 = 1`)
+- Düzeltme: "Hakkında" penceresi güncelleme kontrolü sürerken kapatılınca program çökebiliyordu
+- Program, güncelleme kontrolü sürerken kapatılınca artık temiz kapanıyor
+- Kod düzeni: diyaloglar `ui/dialogs.py`'ye taşındı, tekrarlanan stiller `ui/theme.py`'de toplandı
 - `pytest` birim testleri eklendi
 
 ### v2.0.1 — 2026

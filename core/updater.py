@@ -21,9 +21,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.request
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.constants import VERSION
 
@@ -63,7 +64,30 @@ def _sha256_from_digest(digest: str) -> str:
     return value.lower() if algo.lower() == "sha256" and value else ""
 
 
-class UpdateChecker(QThread):
+class _BackgroundTask(QObject):
+    """
+    run() metodunu arka planda (daemon thread) çalıştırır; sonucu Qt
+    sinyalleriyle ana thread'e bildirir.
+
+    QThread yerine daemon thread kullanılır: program kapanırken ağ isteği
+    sürüyorsa beklenmez ve "QThread: Destroyed while thread is still
+    running" çökmesi yaşanmaz.
+    """
+
+    def start(self) -> None:
+        threading.Thread(target=self._safe_run, daemon=True).start()
+
+    def _safe_run(self) -> None:
+        try:
+            self.run()
+        except RuntimeError:
+            pass  # Qt nesnesi program kapanırken silinmiş — sinyal gönderilemez
+
+    def run(self) -> None:  # pragma: no cover — alt sınıflar uygular
+        raise NotImplementedError
+
+
+class UpdateChecker(_BackgroundTask):
     """Arka planda GitHub API'yi kontrol eden thread."""
 
     update_available = pyqtSignal(str, str, str)   # (yeni_sürüm, download_url, sha256)
@@ -101,15 +125,15 @@ class UpdateChecker(QThread):
             self.check_failed.emit()
 
 
-class SetupDownloader(QThread):
+class SetupDownloader(_BackgroundTask):
     """Setup dosyasını indiren (ve varsa SHA-256 ile doğrulayan) thread."""
 
     progress    = pyqtSignal(int)          # 0-100
     finished_ok = pyqtSignal(str)          # indirilen dosya yolu
     failed      = pyqtSignal()
 
-    def __init__(self, url: str, expected_sha256: str = "") -> None:
-        super().__init__()
+    def __init__(self, url: str, expected_sha256: str = "", parent=None) -> None:
+        super().__init__(parent)
         self._url = url
         self._expected_sha256 = expected_sha256.lower()
 

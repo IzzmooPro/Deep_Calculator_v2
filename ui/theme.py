@@ -75,3 +75,50 @@ def main_style(p: ThemePalette) -> str:
         QMenu::item:selected {{ background-color: {p.accent}; color: #FFF; border-radius: 4px; }}
         QMenu::separator {{ height: 1px; background: rgba(128,128,128,0.2); margin: 3px 6px; }}
     """
+
+def dialog_button_style(p: ThemePalette, primary: bool = False, padding: int = 14) -> str:
+    """Diyalog butonları: primary = vurgu renkli ana buton, değilse ikincil buton."""
+    if primary:
+        return f"""
+            QPushButton {{
+                background-color: {p.accent}; color: #FFF;
+                border: none; border-radius: 4px;
+                font-size: 9pt; font-weight: 600; padding: 0 {padding}px;
+            }}
+            QPushButton:hover {{ background-color: {p.btn_operator_hover}; }}
+        """
+    return f"""
+        QPushButton {{
+            background-color: {p.btn_function}; color: {p.text};
+            border: none; border-radius: 4px;
+            font-size: 9pt; padding: 0 {padding}px;
+        }}
+        QPushButton:hover {{ background-color: {p.btn_function_hover}; }}
+    """
+
+
+def flat_button_style(p: ThemePalette, extra: str = "") -> str:
+    """Arka plansız, üzerine gelince hafif grileşen buton (bellek satırı vb.)."""
+    return f"""
+        QPushButton {{
+            background-color: transparent; color: {p.text};
+            border: none; border-radius: 4px; {extra}
+        }}
+        QPushButton:hover   {{ background-color: rgba(128,128,128,0.12); }}
+        QPushButton:pressed {{ background-color: rgba(128,128,128,0.22); }}
+    """
+
+
+def menu_style(p: ThemePalette, radius: int = 8, item_padding: str = "7px 22px 7px 10px",
+               item_radius: int = 4, item_extra: str = "", separator_margin: str = "3px 6px") -> str:
+    """Açılır menü (QMenu) stili."""
+    return f"""
+        QMenu {{
+            background-color: {p.surface}; color: {p.text};
+            border: 1px solid rgba(128,128,128,0.25);
+            border-radius: {radius}px; padding: 4px;
+        }}
+        QMenu::item {{ padding: {item_padding}; border-radius: {item_radius}px; {item_extra} }}
+        QMenu::item:selected {{ background-color: {p.accent}; color: #FFF; }}
+        QMenu::separator {{ height: 1px; background: rgba(128,128,128,0.2); margin: {separator_margin}; }}
+    """

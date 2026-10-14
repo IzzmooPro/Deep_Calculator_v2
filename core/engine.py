@@ -21,7 +21,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from .constants import OPS, FUNCTIONS, ALLOWED_NODES
+from .constants import OPS, ALLOWED_NODES
 from .formatter import format_number, parse_number
 
 

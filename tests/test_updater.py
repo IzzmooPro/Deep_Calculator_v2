@@ -26,3 +26,35 @@ def test_sha256_from_digest():
     assert _sha256_from_digest("sha256:ABCDEF") == "abcdef"
     assert _sha256_from_digest("md5:abc") == ""
     assert _sha256_from_digest("") == ""
+
+
+def test_background_task_delivers_signal_to_main_thread():
+    import threading
+    import time
+
+    from PyQt6.QtCore import QCoreApplication, pyqtSignal
+
+    from core.updater import _BackgroundTask
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+
+    class Task(_BackgroundTask):
+        done = pyqtSignal(str)
+
+        def run(self) -> None:
+            self.done.emit(threading.current_thread().name)
+
+    received: list[tuple[str, str]] = []
+    task = Task()
+    task.done.connect(lambda worker: received.append((worker, threading.current_thread().name)))
+    task.start()
+
+    deadline = time.time() + 2
+    while not received and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+
+    assert received, "sinyal ulaşmadı"
+    worker, receiver = received[0]
+    assert worker != "MainThread"      # iş arka planda çalıştı
+    assert receiver == "MainThread"    # slot ana thread'de çağrıldı
