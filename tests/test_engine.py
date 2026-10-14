@@ -149,3 +149,36 @@ def test_memory_with_large_value():
     for tok in keys("99999999") + ["x²", "x²", "MS", "C", "MR"]:
         engine.press(tok)
     assert float(engine.state.expression.replace(",", ".")) == pytest.approx(99999999.0 ** 4, rel=1e-11)
+
+
+# ── Tam hassasiyet (ekranda 12 basamak, hesapta tam değer) ───────────────────
+
+@pytest.mark.parametrize("tokens, expected", [
+    (["3", "1/x", "×", "3", "="], "1"),
+    (["2", "2√x", "x²"], "2"),
+    (["2", "2√x", "×", "2", "2√x", "="], "2"),
+    (["3", "1/x", "+", "3", "1/x", "+", "3", "1/x", "="], "1"),
+    (["1", "+", "3", "1/x", "=", "=", "="], "2"),          # "=" tekrarı
+    (["3", "1/x", "MS", "C", "MR", "×", "3", "="], "1"),    # bellek
+    (["3", "1/x", "+/-", "×", "3", "="], "-1"),             # işaret değiştirme
+    (["1", "÷", "3", "=", "×", "3", "="], "1"),             # sonuç üzerinden devam
+])
+def test_full_precision(tokens, expected):
+    assert result(tokens) == expected
+
+
+def test_display_still_rounded():
+    assert run(["3", "1/x"]).expression == "0,333333333333"
+
+
+def test_edited_operand_uses_displayed_value():
+    # Kullanıcı sayıyı değiştirirse saklanan tam değer kullanılmaz.
+    assert result(["3", "1/x", "⌫", "×", "3", "="]) == "0,99999999999"
+
+
+def test_memory_overflow_does_not_crash():
+    engine = CalculatorEngine()
+    engine.load_value(1e308)
+    engine.press("M+")
+    assert engine.press("M+").error == "error.overflow"
+    assert engine.press("MR").expression == "1e308"

@@ -213,7 +213,18 @@ Görüntü (Türkçe)   →   Python ifadesi
 10÷2               →   10/2
 ```
 
-Bu dönüşüm `engine._to_py()` içinde yapılır; binlik noktalar her iki yanında rakam olan noktalar olarak tespit edilip kaldırılır.
+Bu dönüşüm `engine._to_py()` içinde yapılır: ifade operatörlerden bölünür, her operand `formatter.parse_number()` ile okunur (binlik noktalar atılır, virgül ondalık olur).
+
+### Tam Hassasiyet
+
+Ekranda en fazla 12 anlamlı basamak görünür, ama hesaplanan her operandın (sonuç, `1/x`, `√x`, `%`, `MR`, yapıştırılan değer) tam `float` değeri `CalculatorState.exact` içinde saklanır ve sonraki işlemlerde bu değer kullanılır:
+
+```
+3  1/x  →  ekranda 0,333333333333   (saklanan: 0.3333333333333333)
+×  3  = →  1                         (eskiden 0,999999999999)
+```
+
+Kayıt, operandın ekrandaki metni değişmediği sürece geçerlidir; kullanıcı sayıyı düzenlerse ekrandaki değer esas alınır.
 
 ### Tek Instance Kontrolü
 
@@ -255,7 +266,7 @@ Her buton basışının giriş noktası. Token'a göre uygun handler çağrılı
 | `"C"` | `_handle_clear` — bellek ve geçmişi koruyarak sıfırla |
 | `"CE"` | `_handle_clear_entry` — son operandı sil |
 | `"⌫"` | `_handle_backspace` — son karakteri sil |
-| `"%"` | `_handle_percent` — operandı 100'e böl |
+| `"%"` | `_handle_percent` — `a ± b%` → `a ± a·b/100`, `a ×÷ b%` → `b/100` |
 | `"+/-"` | `_handle_negate` — işaret değiştir |
 | `"1/x"` | `_handle_reciprocal` — tersini al |
 | `"x²"` | `_handle_square` — karesini al |
@@ -268,7 +279,9 @@ Her buton basışının giriş noktası. Token'a göre uygun handler çağrılı
 
 | Fonksiyon | Açıklama |
 |---|---|
-| `format_number(value)` | `float/int → "1.234.567,89"` |
+| `format_number(value)` | `float/int → "1.234.567,89"` (çok büyük/küçük: `"1,5e16"`) |
+| `parse_number(text)` | `format_number` çıktısını geri okur |
+| `parse_pasted_number(text)` | Panodan gelen TR/EN biçimli sayıyı okur |
 | `format_display_expr(expr)` | İfade içindeki tüm sayılara binlik nokta uygular |
 
 ### `ui/window.py`
@@ -403,7 +416,7 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 | **Tema otomatik güncelleme yok** | Windows teması değişince program yeniden başlatılmalı |
 | **Bilimsel mod yok** | Yalnızca standart hesap makinesi işlemleri |
 | **Sayı büyüklüğü** | `≥ 1e15` ve `< 1e-10` değerler bilimsel gösterime geçer (`1,23e15`, `2,5e-11`) |
-| **Ondalık hassasiyet** | 12 anlamlı basamak (`:.12g` formatı) |
+| **Ondalık hassasiyet** | Ekranda 12 anlamlı basamak; hesaplamalarda tam `float` (≈15–17 basamak) |
 | **Negatif karekök** | Hata verir — karmaşık sayı desteği yok |
 
 ---
@@ -417,6 +430,7 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 - Düzeltme: Taşma durumunda program çökmek yerine hata gösterir
 - Hata mesajları seçilen dile çevrilir
 - Güncelleme: kurulum dosyası seçimi düzeltildi, indirilen dosya SHA-256 ile doğrulanır, otomatik kurulum yalnızca Windows'ta
+- Düzeltme: Ara sonuçlar ekrandaki 12 basamağa yuvarlanmadan hesaplanır (`1/3 × 3 = 1`)
 - `pytest` birim testleri eklendi
 
 ### v2.0.1 — 2026

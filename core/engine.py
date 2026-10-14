@@ -7,6 +7,11 @@ CalculatorEngine — saf iş mantığı, UI bağımlılığı yok.
   - Hesap geçmişi: history_log listesi
   - Hata mesajları i18n anahtarı olarak tutulur ("error.div_zero" gibi);
     UI bunları t() ile aktif dile çevirir.
+  - Tam hassasiyet: ekranda 12 anlamlı basamak görünür, ancak hesaplanan
+    operandların (sonuç, 1/x, √x, MR …) tam float değeri `exact` içinde
+    saklanır ve sonraki işlemlerde o kullanılır. Böylece 1/3 × 3 = 1 olur.
+    Kayıt, operandın ekrandaki metniyle eşleştiği sürece geçerlidir;
+    kullanıcı sayıyı değiştirirse ekrandaki değer esas alınır.
 """
 
 from __future__ import annotations
@@ -36,6 +41,9 @@ class CalculatorState:
     memory:           float      = 0.0
     memory_active:    bool       = False   # M göstergesi
     history_log:      list[str]  = field(default_factory=list)
+    # operand sırası → (ekrandaki metin, tam değer)
+    exact:            dict[int, tuple[str, float]] = field(default_factory=dict)
+    last_operand_value: float | None = None   # "=" tekrarı için tam değer
 
 
 class CalculationError(Exception):
@@ -50,6 +58,11 @@ ERR_INVALID_EXPR = "error.invalid_expr"
 ERR_NOT_ALLOWED  = "error.not_allowed"
 ERR_CALC         = "error.calc"
 ERR_OVERFLOW     = "error.overflow"
+
+
+_OPS_CHARS = "".join(sorted(OPS))
+_OPS_SPLIT = re.compile(f"([{re.escape(_OPS_CHARS)}])")
+_PY_OPS = {"+": "+", "−": "-", "×": "*", "÷": "/"}
 
 
 def _finite(value: float) -> float:
@@ -108,11 +121,14 @@ class CalculatorEngine:
         if self._state.just_evaluated and self._state.last_op and self._state.last_operand:
             current = self._state.expression
             repeat_expr = current + self._state.last_op + self._state.last_operand
+            if self._state.last_operand_value is not None:
+                self._store_exact(1, self._state.last_operand, self._state.last_operand_value)
             try:
-                result = format_number(self._evaluate(repeat_expr))
+                value = self._evaluate(repeat_expr)
+                result = format_number(value)
                 log_entry = repeat_expr + " = " + result
                 self._state.history = repeat_expr + " ="
-                self._state.expression = result
+                self._set_result(result, value)
                 self._state.history_log.append(log_entry)
             except ZeroDivisionError:
                 self._set_error(ERR_DIV_ZERO)
@@ -125,9 +141,12 @@ class CalculatorEngine:
             return
         try:
             prefix, operand = self._split(expr)
+            self._state.last_operand_value = None
             if prefix and operand:
                 self._state.last_op = prefix[-1]
                 self._state.last_operand = operand
+                self._state.last_operand_value = self._operand_value(
+                    self._operand_index(prefix), operand)
             elif self._state.full_expression:
                 fe = self._state.full_expression
                 _, last_operand_in_fe = self._split(fe.rstrip("".join(OPS)))
@@ -149,16 +168,19 @@ class CalculatorEngine:
             else:
                 self._state.history = expr + " ="
 
-            result = format_number(self._evaluate(expr))
+            value = self._evaluate(expr)
+            result = format_number(value)
             log_entry = self._state.history.rstrip(" =").strip() + " = " + result
             self._state.history_log.append(log_entry)
-            self._state.expression = result
+            self._set_result(result, value)
             self._state.full_expression = ""
             self._state.just_evaluated = True
         except ZeroDivisionError:
             self._set_error(ERR_DIV_ZERO)
         except CalculationError as e:
             self._set_error(str(e))
+        except ValueError:
+            self._set_error(ERR_INVALID_EXPR)
 
     def _handle_clear(self) -> None:
         log = self._state.history_log
@@ -178,9 +200,11 @@ class CalculatorEngine:
     def _handle_backspace(self) -> None:
         if self._state.just_evaluated:
             self._state.expression = "0"
+            self._state.exact.clear()
             self._state.just_evaluated = False
             return
         prefix, operand = self._split(self._state.expression)
+        self._state.exact.pop(self._operand_index(prefix), None)
         if not operand:
             # Operand yoksa son karakter operatördür — onu sil.
             self._state.expression = prefix[:-1] or "0"
@@ -205,10 +229,10 @@ class CalculatorEngine:
         """
         prefix, op = self._split(self._state.expression)
         try:
-            pct = self._parse(op) / 100
+            pct = self._operand_value(self._operand_index(prefix), op) / 100
             if prefix and prefix[-1] in ("+", "−"):
                 pct *= self._evaluate(prefix)
-            self._replace_operand(format_number(_finite(pct)))
+            self._set_operand_value(_finite(pct))
         except (ValueError, OverflowError):
             self._set_error(ERR_INVALID_OP)
         except ZeroDivisionError:
@@ -217,11 +241,7 @@ class CalculatorEngine:
             self._set_error(str(e))
 
     def _handle_negate(self) -> None:
-        prefix, op = self._split(self._state.expression)
-        try:
-            self._state.expression = prefix + format_number(-self._parse(op))
-        except ValueError:
-            self._set_error(ERR_INVALID_OP)
+        self._apply_unary(lambda v: -v)
 
     def _handle_reciprocal(self) -> None:
         self._apply_unary(lambda v: 1 / v)
@@ -238,9 +258,10 @@ class CalculatorEngine:
 
     def _apply_unary(self, fn) -> None:
         """Son operanda tek-girdili bir fonksiyon uygular; hataları yakalar."""
-        _, op = self._split(self._state.expression)
+        prefix, op = self._split(self._state.expression)
         try:
-            self._replace_operand(format_number(_finite(fn(self._parse(op)))))
+            v = self._operand_value(self._operand_index(prefix), op)
+            self._set_operand_value(_finite(fn(v)))
         except ZeroDivisionError:
             self._set_error(ERR_DIV_ZERO)
         except OverflowError:
@@ -269,12 +290,14 @@ class CalculatorEngine:
 
         if prefix and operand:
             try:
-                result = format_number(self._evaluate(expr))
+                value = self._evaluate(expr)
+                result = format_number(value)
                 if self._state.full_expression:
                     self._state.full_expression += operand + op
                 else:
                     self._state.full_expression = expr + op
                 self._state.history = self._state.full_expression.rstrip("".join(OPS)) + " ="
+                self._set_result(result, value)
                 self._state.expression = result + op
             except ZeroDivisionError:
                 self._set_error(ERR_DIV_ZERO)
@@ -292,9 +315,11 @@ class CalculatorEngine:
         if self._state.just_evaluated:
             self._state.expression = "0"
             self._state.full_expression = ""
+            self._state.exact.clear()
             self._state.just_evaluated = False
 
         prefix, operand = self._split(self._state.expression)
+        self._state.exact.pop(self._operand_index(prefix), None)
         if "e" in operand:
             # Bilimsel gösterimli bir sonucun sonuna rakam eklenmez; yeni sayı başlar.
             operand = "0"
@@ -313,16 +338,14 @@ class CalculatorEngine:
     def _handle_mr(self) -> None:
         """Memory Recall — bellekteki değeri ekrana yükle."""
         if self._state.memory_active:
-            prefix, _ = self._split(self._state.expression)
-            self._state.expression = prefix + format_number(self._state.memory)
+            self._set_operand_value(self._state.memory)
             # just_evaluated kasıtlı olarak True yapılmıyor:
             # MR sonrası operatör basıldığında last_op/last_operand korunur.
 
     def _handle_ms(self) -> None:
         """Memory Store — ekrandaki son operandı belleğe kaydet."""
-        _, op = self._split(self._state.expression)
         try:
-            self._state.memory = self._parse(op)
+            self._state.memory = self._current_operand_value()
             self._state.memory_active = True
             # just_evaluated kasıtlı set edilmiyor:
             # MS sonrası kullanıcı hesaba kaldığı yerden devam edebilir.
@@ -331,23 +354,25 @@ class CalculatorEngine:
 
     def _handle_mplus(self) -> None:
         """Memory + — ekrandaki değeri belleğe ekle."""
-        _, op = self._split(self._state.expression)
         try:
-            self._state.memory += self._parse(op)
+            self._state.memory = _finite(self._state.memory + self._current_operand_value())
             self._state.memory_active = True
             # just_evaluated kasıtlı set edilmiyor.
         except ValueError:
             pass
+        except CalculationError as e:
+            self._set_error(str(e))   # bellek taşması — bellek değişmez
 
     def _handle_mminus(self) -> None:
         """Memory - — ekrandaki değeri bellekten çıkar."""
-        _, op = self._split(self._state.expression)
         try:
-            self._state.memory -= self._parse(op)
+            self._state.memory = _finite(self._state.memory - self._current_operand_value())
             self._state.memory_active = True
             # just_evaluated kasıtlı set edilmiyor.
         except ValueError:
             pass
+        except CalculationError as e:
+            self._set_error(str(e))   # bellek taşması — bellek değişmez
 
     # ── Dışarıdan Değer Yükleme ───────────────────────────────────────────────
 
@@ -362,9 +387,10 @@ class CalculatorEngine:
             self._state.expression = "0"
             self._state.full_expression = ""
             self._state.history = ""
+            self._state.exact.clear()
             self._state.just_evaluated = False
         try:
-            self._replace_operand(format_number(_finite(float(value))))
+            self._set_operand_value(_finite(float(value)))
         except (ValueError, CalculationError):
             self._set_error(ERR_INVALID_OP)
         return self._state
@@ -375,14 +401,43 @@ class CalculatorEngine:
         self._state.error = msg
         self._state.expression = "0"
         self._state.history = ""
+        self._state.exact.clear()
         self._state.just_evaluated = False
         self._state.buttons_disabled = True   # operatör/fonksiyon butonları kapat
 
     # ── Yardımcılar ───────────────────────────────────────────────────────────
 
-    def _replace_operand(self, new: str) -> None:
+    def _set_result(self, text: str, value: float) -> None:
+        """Hesap sonucunu tek operand olarak yazar ve tam değerini saklar."""
+        self._state.expression = text
+        self._state.exact.clear()
+        self._store_exact(0, text, value)
+
+    def _set_operand_value(self, value: float) -> None:
+        """Son operandı verilen değerle değiştirir ve tam değerini saklar."""
         prefix, _ = self._split(self._state.expression)
-        self._state.expression = prefix + new
+        text = format_number(value)
+        self._state.expression = prefix + text
+        self._store_exact(self._operand_index(prefix), text, value)
+
+    def _store_exact(self, index: int, text: str, value: float) -> None:
+        self._state.exact[index] = (text, value)
+
+    def _operand_value(self, index: int, text: str) -> float:
+        """Operandın değeri: ekrandaki metin değişmediyse saklanan tam değer."""
+        entry = self._state.exact.get(index)
+        if entry is not None and entry[0] == text:
+            return entry[1]
+        return self._parse(text)
+
+    def _current_operand_value(self) -> float:
+        prefix, op = self._split(self._state.expression)
+        return self._operand_value(self._operand_index(prefix), op)
+
+    @staticmethod
+    def _operand_index(prefix: str) -> int:
+        """Prefix'teki operatör sayısı = son operandın sırası (0'dan başlar)."""
+        return sum(ch in OPS for ch in prefix)
 
     @staticmethod
     def _split(expr: str) -> tuple[str, str]:
@@ -393,39 +448,33 @@ class CalculatorEngine:
 
     @staticmethod
     def _parse(value: str) -> float:
+        """Ekrandaki operand metni → float. "", "-", "," gibi yarım girişler 0 sayılır."""
+        if value.strip("-,") == "":
+            return 0.0
         return parse_number(value)
 
-    @staticmethod
-    def _to_py(display_expr: str) -> str:
+    def _to_py(self, display_expr: str) -> str:
         """
-        Türkçe görüntü ifadesini Python değerlendirme ifadesine çevirir.
-        Binlik nokta ayraçlarını kaldırır, ondalık virgülü noktaya çevirir.
+        Ekran ifadesini Python ifadesine çevirir. Her operand, varsa saklanan
+        tam değeriyle, yoksa ekrandaki metinden okunan değerle yazılır.
         """
-        result = ""
-        i = 0
-        while i < len(display_expr):
-            ch = display_expr[i]
-            # Binlik ayraç tespiti: her iki yanında da rakam olmalı
-            if (ch == "." and
-                    i > 0 and display_expr[i - 1].isdigit() and
-                    i + 1 < len(display_expr) and display_expr[i + 1].isdigit()):
-                i += 1
+        parts = _OPS_SPLIT.split(display_expr)
+        py: list[str] = []
+        index = 0
+        for part in parts:
+            if part in _PY_OPS:
+                py.append(_PY_OPS[part])
                 continue
-            result += ch
-            i += 1
-        py = (result
-              .replace(",", ".")
-              .replace("×", "*")
-              .replace("÷", "/")
-              .replace("−", "-"))
-        # Sondaki nokta varsa kaldır (örn: "42." → "42")
-        py = re.sub(r"(\d)\.$", r"\1", py)
-        # Operatör sonrası sondaki nokta (örn: "5+." → "5+0")
-        py = re.sub(r"([+\-*/])\.$", r"\g<1>0", py)
-        return py
+            try:
+                value = self._operand_value(index, part)
+            except ValueError as e:
+                raise CalculationError(ERR_INVALID_EXPR) from e
+            py.append(f"({value!r})")
+            index += 1
+        return "".join(py)
 
     def _evaluate(self, display_expr: str) -> float:
-        py = self._to_py(display_expr.rstrip("".join(OPS)))
+        py = self._to_py(display_expr.rstrip(_OPS_CHARS))
         try:
             tree = ast.parse(py, mode="eval")
         except SyntaxError as e:
