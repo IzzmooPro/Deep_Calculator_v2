@@ -91,6 +91,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### Testler
+
+```bash
+pip install pytest
+python -m pytest
+```
+
 ---
 
 ## 📁 Proje Yapısı
@@ -395,13 +402,22 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 |---|---|
 | **Tema otomatik güncelleme yok** | Windows teması değişince program yeniden başlatılmalı |
 | **Bilimsel mod yok** | Yalnızca standart hesap makinesi işlemleri |
-| **Sayı büyüklüğü** | `≥ 1e15` değerler bilimsel gösterime geçer (`1.23e+15`) |
+| **Sayı büyüklüğü** | `≥ 1e15` ve `< 1e-10` değerler bilimsel gösterime geçer (`1,23e15`, `2,5e-11`) |
 | **Ondalık hassasiyet** | 12 anlamlı basamak (`:.12g` formatı) |
 | **Negatif karekök** | Hata verir — karmaşık sayı desteği yok |
 
 ---
 
 ## 📝 Değişiklik Geçmişi
+
+### Yayımlanmamış
+- Düzeltme: 1e15'ten büyük sonuçlarla devam eden işlemler yanlış sonuç veriyordu
+- Düzeltme: Kopyalanan sonuç (`1.234,5`) yanlış yapıştırılıyordu; İngilizce biçim (`1,234.56`) de artık destekleniyor
+- Değişiklik: Yüzde Windows Hesap Makinesi gibi çalışır (`200 + 10% = 220`)
+- Düzeltme: Taşma durumunda program çökmek yerine hata gösterir
+- Hata mesajları seçilen dile çevrilir
+- Güncelleme: kurulum dosyası seçimi düzeltildi, indirilen dosya SHA-256 ile doğrulanır, otomatik kurulum yalnızca Windows'ta
+- `pytest` birim testleri eklendi
 
 ### v2.0.1 — 2026
 - Sürüm numarası güncellendi

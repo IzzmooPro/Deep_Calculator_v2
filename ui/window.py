@@ -29,12 +29,13 @@ from core import (
     CalculatorEngine, CalculatorState,
     format_display_expr,
 )
+from core.formatter import parse_number, parse_pasted_number
 from assets.icon_data import ICON_DARK, ICON_LIGHT
 from ui.grid_layout import GRID
 from ui.help_dialog import show_help
 from ui.theme import THEMES, ThemePalette, btn_style, main_style
 from ui.widgets import AnimatedButton
-from core.updater import UpdateChecker, SetupDownloader, launch_setup_and_quit
+from core.updater import UpdateChecker, SetupDownloader, launch_setup_and_quit, RELEASES_URL
 from core.i18n import t, set_language, get_language, SUPPORTED_LANGUAGES
 
 _DISABLE_ON_ERROR = OPS | frozenset({"%", "1/x", "x²", "2√x", "+/-"})
@@ -326,31 +327,11 @@ class CalculatorWindow(QMainWindow):
         captured = str(value)
         self._history_visible = False
         self._close_history_flyout()
-        self._dispatch("C")
-
-        # Türkçe format: binlik=nokta, ondalık=virgül
-        # Önce binlik noktaları kaldır, ardından virgülü nokta yap → float parse.
-        # Sonra format_display_expr ile yeniden Türkçe gösterime çevir.
-        is_negative = captured.startswith("-")
-        raw = captured.lstrip("-")
-        # Binlik nokta kaldır, ondalık virgülü geçici olarak işaretle
-        normalized = raw.replace(".", "").replace(",", ".")
         try:
-            num = float(normalized)
+            num = parse_number(captured)  # geçmişteki değer uygulamanın kendi formatında
         except ValueError:
             return
-        # Tamsayı mı yoksa ondalıklı mı kontrol et
-        from core.formatter import format_number as _fmt
-        formatted = _fmt(num)
-        # Karakterleri tek tek dispatch et (Türkçe formatta)
-        for ch in formatted:
-            if ch.isdigit():
-                self._dispatch(ch)
-            elif ch == ",":
-                self._dispatch(",")
-            # binlik noktaları atla — engine kendi ekler
-        if is_negative:
-            self._dispatch("+/-")
+        self._load_value(num)
 
     def _clear_history(self) -> None:
         self._engine.state.history_log.clear()
@@ -579,15 +560,17 @@ class CalculatorWindow(QMainWindow):
     def _paste_from_clipboard(self) -> None:
         text = QApplication.clipboard().text().strip()
         if not text: return
-        is_negative = text.startswith("-")
-        digits_part = text.lstrip("-+").strip()
-        if not digits_part: return
-        self._dispatch("C")
-        for ch in digits_part:
-            if ch.isdigit(): self._dispatch(ch)
-            elif ch in (",", "."): self._dispatch(",")
-        if is_negative: self._dispatch("+/-")
+        try:
+            num = parse_pasted_number(text)
+        except ValueError:
+            return  # sayı olmayan metin yok sayılır
+        self._load_value(num)
         self.setFocus(); self.activateWindow()
+
+    def _load_value(self, value: float) -> None:
+        """Yapıştırılan / geçmişten seçilen değeri son operand olarak yükler."""
+        self._last_token = ""
+        self._render(self._engine.load_value(value))
 
     # ── Dispatch & Render ─────────────────────────────────────────────────────
 
@@ -605,7 +588,7 @@ class CalculatorWindow(QMainWindow):
             }}
         """
         if state.error:
-            self._display.setText(state.error)
+            self._display.setText(t(state.error))
             self._display.setStyleSheet(base_css + "QLineEdit { color: #FF3B30; }")
         else:
             text = format_display_expr(state.expression or "0")
@@ -867,7 +850,7 @@ class CalculatorWindow(QMainWindow):
             c = UpdateChecker()
             _checker.append(c)
 
-            def on_available(tag: str, url: str) -> None:
+            def on_available(tag: str, url: str, digest: str) -> None:
                 update_status.setText(t("about.update.available", tag=tag))
                 update_status.setStyleSheet(f"color: {p.accent}; font-size: 9pt; font-weight: 600;")
                 check_btn.setText(t("about.update.do"))
@@ -884,7 +867,7 @@ class CalculatorWindow(QMainWindow):
                     check_btn.clicked.disconnect()
                 except Exception:
                     pass
-                check_btn.clicked.connect(lambda: (dlg.accept(), self._start_download(tag, url)))
+                check_btn.clicked.connect(lambda: (dlg.accept(), self._start_download(tag, url, digest)))
 
             def on_up_to_date() -> None:
                 update_status.setText(t("about.update.uptodate"))
@@ -997,7 +980,7 @@ class CalculatorWindow(QMainWindow):
             cat = category.currentText()
             body = text_edit.toPlainText().strip()
             if not body:
-                body = "(Açıklama girilmedi)"
+                body = t("feedback.empty_body")
 
             from core.constants import VERSION
             full_body = f"{body}\n\n---\n_Deep Calculator v{VERSION}_"
@@ -1034,11 +1017,12 @@ class CalculatorWindow(QMainWindow):
         self._update_checker.update_available.connect(self._on_update_available)
         self._update_checker.start()
 
-    def _on_update_available(self, new_version: str, download_url: str) -> None:
+    def _on_update_available(self, new_version: str, download_url: str, digest: str) -> None:
         """Yeni sürüm bulunduğunda bildirim göster."""
-        self._show_update_prompt(new_version, download_url, auto=True)
+        self._show_update_prompt(new_version, download_url, digest, auto=True)
 
-    def _show_update_prompt(self, new_version: str, download_url: str, auto: bool = False) -> None:
+    def _show_update_prompt(self, new_version: str, download_url: str,
+                            digest: str = "", auto: bool = False) -> None:
         """Yeni sürüm bildirim penceresi."""
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
         from core.constants import VERSION
@@ -1089,7 +1073,7 @@ class CalculatorWindow(QMainWindow):
             }}
             QPushButton:hover {{ background-color: {p.btn_operator_hover}; }}
         """)
-        update_btn.clicked.connect(lambda: (dlg.accept(), self._start_download(new_version, download_url)))
+        update_btn.clicked.connect(lambda: (dlg.accept(), self._start_download(new_version, download_url, digest)))
 
         btn_row.addWidget(later_btn)
         btn_row.addWidget(update_btn)
@@ -1097,16 +1081,16 @@ class CalculatorWindow(QMainWindow):
 
         dlg.exec()
 
-    def _start_download(self, new_version: str, download_url: str) -> None:
+    def _start_download(self, new_version: str, download_url: str, digest: str = "") -> None:
         """İndirme başlatır, progress penceresi gösterir."""
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
         p = THEMES[self._theme_name]
 
         if not download_url:
-            # URL yoksa GitHub sayfasını aç
+            # URL yoksa (ör. Windows dışı sistem) GitHub sürüm sayfasını aç
             from PyQt6.QtGui import QDesktopServices
             from PyQt6.QtCore import QUrl
-            QDesktopServices.openUrl(QUrl(f"https://github.com/{__import__('core.updater', fromlist=['OWNER_REPO']).OWNER_REPO}/releases/latest"))
+            QDesktopServices.openUrl(QUrl(RELEASES_URL))
             return
 
         dlg = QDialog(self)
@@ -1135,7 +1119,7 @@ class CalculatorWindow(QMainWindow):
         """)
         lay.addWidget(bar)
 
-        self._downloader = SetupDownloader(download_url)
+        self._downloader = SetupDownloader(download_url, digest)
         self._downloader.progress.connect(bar.setValue)
         self._downloader.finished_ok.connect(lambda path: (dlg.accept(), launch_setup_and_quit(path)))
         self._downloader.failed.connect(lambda: (dlg.accept(), self._on_download_failed()))
@@ -1144,10 +1128,9 @@ class CalculatorWindow(QMainWindow):
         dlg.exec()
 
     def _on_download_failed(self) -> None:
-        from PyQt6.QtWidgets import QMessageBox
         from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
-        QDesktopServices.openUrl(QUrl("https://github.com/IzzmooPro/Deep_Calculator_v2/releases/latest"))
+        QDesktopServices.openUrl(QUrl(RELEASES_URL))
 
     # ── Pencere Olayları ──────────────────────────────────────────────────────
 

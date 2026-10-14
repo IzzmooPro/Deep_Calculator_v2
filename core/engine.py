@@ -5,6 +5,8 @@ CalculatorEngine — saf iş mantığı, UI bağımlılığı yok.
   - Bellek: MC, MR, M+, M-, MS token'ları
   - Hata durumu: buttons_disabled flag → UI butonları devre dışı bırakır
   - Hesap geçmişi: history_log listesi
+  - Hata mesajları i18n anahtarı olarak tutulur ("error.div_zero" gibi);
+    UI bunları t() ile aktif dile çevirir.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 
 from .constants import OPS, FUNCTIONS, ALLOWED_NODES
-from .formatter import format_number
+from .formatter import format_number, parse_number
 
 
 # ── Veri Yapıları ─────────────────────────────────────────────────────────────
@@ -37,7 +39,24 @@ class CalculatorState:
 
 
 class CalculationError(Exception):
-    pass
+    """Mesajı bir i18n anahtarıdır (ör. "error.overflow")."""
+
+
+# Hata anahtarları — çevirileri core/i18n.py içindedir.
+ERR_DIV_ZERO     = "error.div_zero"
+ERR_INVALID_OP   = "error.invalid_op"
+ERR_NEG_SQRT     = "error.neg_sqrt"
+ERR_INVALID_EXPR = "error.invalid_expr"
+ERR_NOT_ALLOWED  = "error.not_allowed"
+ERR_CALC         = "error.calc"
+ERR_OVERFLOW     = "error.overflow"
+
+
+def _finite(value: float) -> float:
+    """Taşma (inf/nan) durumunda CalculationError fırlatır."""
+    if not math.isfinite(value):
+        raise CalculationError(ERR_OVERFLOW)
+    return value
 
 
 # ── Engine ────────────────────────────────────────────────────────────────────
@@ -95,8 +114,10 @@ class CalculatorEngine:
                 self._state.history = repeat_expr + " ="
                 self._state.expression = result
                 self._state.history_log.append(log_entry)
-            except (ZeroDivisionError, CalculationError) as e:
-                self._set_error(str(e) if isinstance(e, CalculationError) else "Sıfıra bölme hatası")
+            except ZeroDivisionError:
+                self._set_error(ERR_DIV_ZERO)
+            except CalculationError as e:
+                self._set_error(str(e))
             return
 
         expr = expr.rstrip("".join(OPS))
@@ -135,7 +156,7 @@ class CalculatorEngine:
             self._state.full_expression = ""
             self._state.just_evaluated = True
         except ZeroDivisionError:
-            self._set_error("Sıfıra bölme hatası")
+            self._set_error(ERR_DIV_ZERO)
         except CalculationError as e:
             self._set_error(str(e))
 
@@ -159,46 +180,73 @@ class CalculatorEngine:
             self._state.expression = "0"
             self._state.just_evaluated = False
             return
-        expr = self._state.expression
-        self._state.expression = "0" if len(expr) <= 1 else expr[:-1]
+        prefix, operand = self._split(self._state.expression)
+        if not operand:
+            # Operand yoksa son karakter operatördür — onu sil.
+            self._state.expression = prefix[:-1] or "0"
+            return
+        if "e" in operand:
+            # Bilimsel gösterimli sayı karakter karakter silinmez (ör. "1,5e1"
+            # yanlış bir sayı olurdu) — operand tümden silinir.
+            operand = ""
+        else:
+            operand = operand[:-1]
+            if operand == "-":
+                operand = ""
+        new_expr = prefix + operand
+        self._state.expression = new_expr or "0"
 
     def _handle_percent(self) -> None:
-        _, op = self._split(self._state.expression)
+        """
+        Windows Hesap Makinesi davranışı:
+          a + b %  →  a + (a × b / 100)     (− için de aynı)
+          a × b %  →  a × (b / 100)         (÷ için de aynı)
+          b %      →  b / 100
+        """
+        prefix, op = self._split(self._state.expression)
         try:
-            self._replace_operand(format_number(self._parse(op) / 100))
-        except (ValueError, ZeroDivisionError):
-            self._set_error("Geçersiz işlem")
+            pct = self._parse(op) / 100
+            if prefix and prefix[-1] in ("+", "−"):
+                pct *= self._evaluate(prefix)
+            self._replace_operand(format_number(_finite(pct)))
+        except (ValueError, OverflowError):
+            self._set_error(ERR_INVALID_OP)
+        except ZeroDivisionError:
+            self._set_error(ERR_DIV_ZERO)
+        except CalculationError as e:
+            self._set_error(str(e))
 
     def _handle_negate(self) -> None:
         prefix, op = self._split(self._state.expression)
         try:
             self._state.expression = prefix + format_number(-self._parse(op))
         except ValueError:
-            self._set_error("Geçersiz işlem")
+            self._set_error(ERR_INVALID_OP)
 
     def _handle_reciprocal(self) -> None:
-        _, op = self._split(self._state.expression)
-        try:
-            v = self._parse(op)
-            if v == 0: raise ZeroDivisionError
-            self._replace_operand(format_number(1 / v))
-        except ZeroDivisionError:
-            self._set_error("Sıfıra bölme hatası")
+        self._apply_unary(lambda v: 1 / v)
 
     def _handle_square(self) -> None:
-        _, op = self._split(self._state.expression)
-        try:
-            self._replace_operand(format_number(self._parse(op) ** 2))
-        except ValueError:
-            self._set_error("Geçersiz işlem")
+        self._apply_unary(lambda v: v ** 2)
 
     def _handle_sqrt(self) -> None:
+        def sqrt(v: float) -> float:
+            if v < 0:
+                raise CalculationError(ERR_NEG_SQRT)
+            return math.sqrt(v)
+        self._apply_unary(sqrt)
+
+    def _apply_unary(self, fn) -> None:
+        """Son operanda tek-girdili bir fonksiyon uygular; hataları yakalar."""
         _, op = self._split(self._state.expression)
         try:
-            v = self._parse(op)
-            if v < 0:
-                raise CalculationError("Negatif sayının karekökü alınamaz")
-            self._replace_operand(format_number(math.sqrt(v)))
+            self._replace_operand(format_number(_finite(fn(self._parse(op)))))
+        except ZeroDivisionError:
+            self._set_error(ERR_DIV_ZERO)
+        except OverflowError:
+            self._set_error(ERR_OVERFLOW)
+        except ValueError:
+            self._set_error(ERR_INVALID_OP)
         except CalculationError as e:
             self._set_error(str(e))
 
@@ -229,7 +277,7 @@ class CalculatorEngine:
                 self._state.history = self._state.full_expression.rstrip("".join(OPS)) + " ="
                 self._state.expression = result + op
             except ZeroDivisionError:
-                self._set_error("Sıfıra bölme hatası")
+                self._set_error(ERR_DIV_ZERO)
                 return
             except CalculationError as e:
                 self._set_error(str(e))
@@ -247,6 +295,9 @@ class CalculatorEngine:
             self._state.just_evaluated = False
 
         prefix, operand = self._split(self._state.expression)
+        if "e" in operand:
+            # Bilimsel gösterimli bir sonucun sonuna rakam eklenmez; yeni sayı başlar.
+            operand = "0"
         if digit == "," and "," in operand:
             return
         operand = digit if (operand == "0" and digit != ",") else operand + digit
@@ -298,6 +349,26 @@ class CalculatorEngine:
         except ValueError:
             pass
 
+    # ── Dışarıdan Değer Yükleme ───────────────────────────────────────────────
+
+    def load_value(self, value: float) -> CalculatorState:
+        """
+        Yapıştırma / geçmişten seçme için: son operandı verilen değerle değiştirir.
+        Hesap yeni bitmişse (just_evaluated) yeni bir hesaba başlanır.
+        """
+        self._state.error = ""
+        self._state.buttons_disabled = False
+        if self._state.just_evaluated:
+            self._state.expression = "0"
+            self._state.full_expression = ""
+            self._state.history = ""
+            self._state.just_evaluated = False
+        try:
+            self._replace_operand(format_number(_finite(float(value))))
+        except (ValueError, CalculationError):
+            self._set_error(ERR_INVALID_OP)
+        return self._state
+
     # ── Hata ──────────────────────────────────────────────────────────────────
 
     def _set_error(self, msg: str) -> None:
@@ -322,8 +393,7 @@ class CalculatorEngine:
 
     @staticmethod
     def _parse(value: str) -> float:
-        cleaned = value.replace(".", "").replace(",", ".")
-        return float(cleaned) if cleaned else 0.0
+        return parse_number(value)
 
     @staticmethod
     def _to_py(display_expr: str) -> str:
@@ -359,16 +429,18 @@ class CalculatorEngine:
         try:
             tree = ast.parse(py, mode="eval")
         except SyntaxError as e:
-            raise CalculationError("Geçersiz ifade") from e
+            raise CalculationError(ERR_INVALID_EXPR) from e
         for node in ast.walk(tree):
             if not isinstance(node, ALLOWED_NODES):
-                raise CalculationError("İzin verilmeyen işlem")
+                raise CalculationError(ERR_NOT_ALLOWED)
         try:
-            return float(self._eval_node(tree.body))
-        except ZeroDivisionError:
+            return _finite(float(self._eval_node(tree.body)))
+        except (ZeroDivisionError, CalculationError):
             raise
+        except OverflowError as e:
+            raise CalculationError(ERR_OVERFLOW) from e
         except Exception as e:
-            raise CalculationError("Hesaplama hatası") from e
+            raise CalculationError(ERR_CALC) from e
 
     def _eval_node(self, node: ast.AST) -> float:
         if isinstance(node, ast.Constant):
@@ -386,4 +458,4 @@ class CalculatorEngine:
             v = self._eval_node(node.operand)
             if isinstance(node.op, ast.USub): return -v
             if isinstance(node.op, ast.UAdd): return v
-        raise CalculationError(f"Desteklenmeyen node: {type(node)}")
+        raise CalculationError(ERR_NOT_ALLOWED)

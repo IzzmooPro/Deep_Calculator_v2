@@ -29,3 +29,6 @@ desktop.ini
 # Geçici dosyalar
 *.tmp
 *.log
+
+# Test önbelleği
+.pytest_cache/

@@ -87,6 +87,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.send":        "Gönder →",
         "feedback.cancel":      "İptal",
 
+        # Hata mesajları
+        "error.div_zero":     "Sıfıra bölünemez",
+        "error.invalid_op":   "Geçersiz işlem",
+        "error.neg_sqrt":     "Negatif sayının karekökü alınamaz",
+        "error.invalid_expr": "Geçersiz ifade",
+        "error.not_allowed":  "İzin verilmeyen işlem",
+        "error.calc":         "Hesaplama hatası",
+        "error.overflow":     "Sayı çok büyük",
+        "feedback.empty_body": "(Açıklama girilmedi)",
+
         # Kılavuz
         "help.title":           "Kullanım Kılavuzu",
         "help.header":          "  🧮  Kullanım Kılavuzu",
@@ -108,7 +118,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.btn.c":           "Her şeyi sıfırla",
         "help.btn.back":        "Son karakteri sil",
         "help.btn.sign":        "İşaret değiştir (±)",
-        "help.btn.percent":     "Yüzdeye çevir (÷ 100)",
+        "help.btn.percent":     "Yüzde: 200 + 10% → 220",
         "help.btn.inv":         "Tersini al (1 ÷ x)",
         "help.btn.sq":          "Karesini al",
         "help.btn.sqrt":        "Karekök al",
@@ -189,6 +199,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.send":        "Send →",
         "feedback.cancel":      "Cancel",
 
+        # Hata mesajları
+        "error.div_zero":     "Cannot divide by zero",
+        "error.invalid_op":   "Invalid operation",
+        "error.neg_sqrt":     "Cannot take square root of a negative number",
+        "error.invalid_expr": "Invalid expression",
+        "error.not_allowed":  "Operation not allowed",
+        "error.calc":         "Calculation error",
+        "error.overflow":     "Number too large",
+        "feedback.empty_body": "(No description provided)",
+
         "help.title":           "User Guide",
         "help.header":          "  🧮  User Guide",
         "help.kbd.title":       "Keyboard Shortcuts",
@@ -209,7 +229,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.btn.c":           "Clear all",
         "help.btn.back":        "Delete last character",
         "help.btn.sign":        "Toggle sign (±)",
-        "help.btn.percent":     "Convert to percent (÷ 100)",
+        "help.btn.percent":     "Percent: 200 + 10% → 220",
         "help.btn.inv":         "Reciprocal (1 ÷ x)",
         "help.btn.sq":          "Square",
         "help.btn.sqrt":        "Square root",
@@ -290,6 +310,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.send":        "Senden →",
         "feedback.cancel":      "Abbrechen",
 
+        # Hata mesajları
+        "error.div_zero":     "Division durch Null nicht möglich",
+        "error.invalid_op":   "Ungültige Operation",
+        "error.neg_sqrt":     "Wurzel aus negativer Zahl nicht möglich",
+        "error.invalid_expr": "Ungültiger Ausdruck",
+        "error.not_allowed":  "Nicht erlaubte Operation",
+        "error.calc":         "Berechnungsfehler",
+        "error.overflow":     "Zahl zu groß",
+        "feedback.empty_body": "(Keine Beschreibung angegeben)",
+
         "help.title":           "Benutzerhandbuch",
         "help.header":          "  🧮  Benutzerhandbuch",
         "help.kbd.title":       "Tastaturkürzel",
@@ -310,7 +340,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.btn.c":           "Alles zurücksetzen",
         "help.btn.back":        "Letztes Zeichen löschen",
         "help.btn.sign":        "Vorzeichen wechseln (±)",
-        "help.btn.percent":     "In Prozent umwandeln (÷ 100)",
+        "help.btn.percent":     "Prozent: 200 + 10% → 220",
         "help.btn.inv":         "Kehrwert (1 ÷ x)",
         "help.btn.sq":          "Quadrieren",
         "help.btn.sqrt":        "Quadratwurzel",
@@ -391,6 +421,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.send":        "Envoyer →",
         "feedback.cancel":      "Annuler",
 
+        # Hata mesajları
+        "error.div_zero":     "Division par zéro impossible",
+        "error.invalid_op":   "Opération invalide",
+        "error.neg_sqrt":     "Racine carrée d'un nombre négatif impossible",
+        "error.invalid_expr": "Expression invalide",
+        "error.not_allowed":  "Opération non autorisée",
+        "error.calc":         "Erreur de calcul",
+        "error.overflow":     "Nombre trop grand",
+        "feedback.empty_body": "(Aucune description fournie)",
+
         "help.title":           "Guide d'utilisation",
         "help.header":          "  🧮  Guide d'utilisation",
         "help.kbd.title":       "Raccourcis clavier",
@@ -411,7 +451,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.btn.c":           "Tout réinitialiser",
         "help.btn.back":        "Supprimer le dernier caractère",
         "help.btn.sign":        "Changer le signe (±)",
-        "help.btn.percent":     "Convertir en pourcentage (÷ 100)",
+        "help.btn.percent":     "Pourcentage : 200 + 10% → 220",
         "help.btn.inv":         "Inverse (1 ÷ x)",
         "help.btn.sq":          "Carré",
         "help.btn.sqrt":        "Racine carrée",
@@ -492,6 +532,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.send":        "Enviar →",
         "feedback.cancel":      "Cancelar",
 
+        # Hata mesajları
+        "error.div_zero":     "No se puede dividir entre cero",
+        "error.invalid_op":   "Operación no válida",
+        "error.neg_sqrt":     "No se puede calcular la raíz de un número negativo",
+        "error.invalid_expr": "Expresión no válida",
+        "error.not_allowed":  "Operación no permitida",
+        "error.calc":         "Error de cálculo",
+        "error.overflow":     "Número demasiado grande",
+        "feedback.empty_body": "(Sin descripción)",
+
         "help.title":           "Guía de uso",
         "help.header":          "  🧮  Guía de uso",
         "help.kbd.title":       "Atajos de teclado",
@@ -512,7 +562,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.btn.c":           "Reiniciar todo",
         "help.btn.back":        "Eliminar último carácter",
         "help.btn.sign":        "Cambiar signo (±)",
-        "help.btn.percent":     "Convertir a porcentaje (÷ 100)",
+        "help.btn.percent":     "Porcentaje: 200 + 10% → 220",
         "help.btn.inv":         "Recíproco (1 ÷ x)",
         "help.btn.sq":          "Elevar al cuadrado",
         "help.btn.sqrt":        "Raíz cuadrada",
