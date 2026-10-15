@@ -12,6 +12,7 @@ CalculatorWindow — ana pencere.
 
 from __future__ import annotations
 
+import os
 import sys
 
 from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
@@ -44,6 +45,15 @@ from ui.theme import (
 from ui.widgets import AnimatedButton
 from core.updater import SetupDownloader, UpdateChecker
 from core.i18n import t, set_language, get_language, SUPPORTED_LANGUAGES
+
+# Tanı modu: DEEPCALC_DEBUG=1 ile başlatılınca her tuş/tıklama konsola yazılır.
+_DEBUG = os.environ.get("DEEPCALC_DEBUG") == "1"
+
+
+def _debug(msg: str) -> None:
+    if _DEBUG:
+        print(f"[DEBUG] {msg}", flush=True)
+
 
 _DISABLE_ON_ERROR = OPS | frozenset({"%", "1/x", "x²", "2√x", "+/-"})
 
@@ -476,6 +486,7 @@ class CalculatorWindow(QMainWindow):
     def _on_button_clicked(self) -> None:
         sender = self.sender()
         if isinstance(sender, QPushButton):
+            _debug(f"tıklama: buton={sender.text()!r}")
             self._dispatch(sender.text())
 
     def eventFilter(self, obj, event) -> bool:  # type: ignore
@@ -499,6 +510,8 @@ class CalculatorWindow(QMainWindow):
         if event.key() == Qt.Key.Key_H:
             self._show_help(); return
         token = key_to_token(event.key(), event.text())
+        _debug(f"tuş: key=0x{int(event.key()):X} text={event.text()!r} "
+               f"modifiers={event.modifiers()} → token={token!r}")
         if token:
             self._dispatch(token)
 
@@ -569,6 +582,7 @@ class CalculatorWindow(QMainWindow):
     # ── Dispatch & Render ─────────────────────────────────────────────────────
 
     def _dispatch(self, token: str) -> None:
+        _debug(f"işlem: {token!r}  (önce: {self._engine.state.expression!r})")
         self._last_token = token
         self._render(self._engine.press(token))
 
