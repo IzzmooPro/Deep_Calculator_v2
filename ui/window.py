@@ -27,11 +27,12 @@ from PyQt6.QtWidgets import (
 )
 
 from core import (
-    OPS, KEY_MAP, FUNCTIONS,
+    OPS, FUNCTIONS,
     ThemeName, ORG, APP, DEFAULT_W, DEFAULT_H, CORNER_HIT,
     CalculatorEngine, CalculatorState,
     format_display_expr,
 )
+from core.constants import key_to_token
 from core.formatter import parse_number, parse_pasted_number
 from assets.icon_data import ICON_DARK, ICON_LIGHT
 from ui.grid_layout import GRID
@@ -497,7 +498,7 @@ class CalculatorWindow(QMainWindow):
                 return
         if event.key() == Qt.Key.Key_H:
             self._show_help(); return
-        token = KEY_MAP.get(event.key())
+        token = key_to_token(event.key(), event.text())
         if token:
             self._dispatch(token)
 

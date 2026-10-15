@@ -117,6 +117,8 @@ class CalculatorEngine:
 
     def _handle_equals(self) -> None:
         expr = self._state.expression
+        # "200+10÷ =" gibi: operatörden sonra sayı girilmeden "=" basıldı.
+        ends_with_op = bool(expr) and expr[-1] in OPS
 
         if self._state.just_evaluated and self._state.last_op and self._state.last_operand:
             current = self._state.expression
@@ -163,7 +165,12 @@ class CalculatorEngine:
                 self._state.last_operand = ""
 
             if self._state.full_expression:
-                full = self._state.full_expression + operand
+                if ends_with_op:
+                    # Sondaki operatörün ikinci operandı yok; ara sonuç ifadeye
+                    # eklenmez (eskiden "200+10÷210" gibi yanlış yazılıyordu).
+                    full = self._state.full_expression.rstrip(_OPS_CHARS)
+                else:
+                    full = self._state.full_expression + operand
                 self._state.history = full + " ="
             else:
                 self._state.history = expr + " ="

@@ -51,6 +51,28 @@ KEY_MAP: dict[int, str] = {
     Qt.Key.Key_F9: "+/-",
 }
 
+# Klavyenin ürettiği karakter → token. Klavye düzeninden bağımsızdır:
+# Türkçe Q klavyede "%" Shift+5, "/" Shift+7, "+" Shift+4 ile yazılır; bu
+# durumlarda tuş kodu her platformda güvenilir değildir, karakter ise doğrudur.
+KEY_TEXT_MAP: dict[str, str] = {
+    "+": "+", "-": "−", "−": "−",
+    "*": "×", "×": "×",
+    "/": "÷", "÷": "÷",
+    "%": "%",
+    ",": ",", ".": ",",
+    "=": "=",
+}
+
+
+def key_to_token(key: int, text: str) -> str | None:
+    """Klavye olayını token'a çevirir: önce üretilen karaktere, sonra tuş koduna bakar."""
+    if len(text) == 1:
+        if text.isdigit():
+            return text
+        if text in KEY_TEXT_MAP:
+            return KEY_TEXT_MAP[text]
+    return KEY_MAP.get(key)
+
 # ── AST Güvenli Node Tipleri ──────────────────────────────────────────────────
 
 ALLOWED_NODES: tuple[type, ...] = (

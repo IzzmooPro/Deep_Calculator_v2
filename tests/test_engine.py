@@ -182,3 +182,10 @@ def test_memory_overflow_does_not_crash():
     engine.press("M+")
     assert engine.press("M+").error == "error.overflow"
     assert engine.press("MR").expression == "1e308"
+
+
+def test_equals_right_after_operator_history():
+    state = run(["2", "0", "0", "+", "1", "0", "÷", "="])
+    assert state.expression == "210"
+    assert state.history == "200+10 ="
+    assert state.history_log[-1] == "200+10 = 210"
