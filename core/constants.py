@@ -13,7 +13,7 @@ from PyQt6.QtCore import Qt
 
 ORG        = "DeepCalc"
 APP        = "Calculator"
-VERSION    = "2.0.1"
+VERSION    = "2.0.2"
 
 DEFAULT_W  = 320
 DEFAULT_H  = 500
