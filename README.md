@@ -1,6 +1,6 @@
 # 🧮 Deep Calculator
 
-**Sürüm:** 2.0.1
+**Sürüm:** 2.0.2
 **Geliştirici:** Izzmoo  
 **İletişim:** IzzmooPro@gmail.com  
 **Lisans:** Ücretsiz — kişisel ve ticari kullanım  
@@ -250,7 +250,7 @@ Program zaten açıksa ikinci kopya, yerel bir soket (`QLocalServer` / `QLocalSo
 |---|---|---|
 | `ORG` | `str` | Organizasyon adı (`"DeepCalc"`) |
 | `APP` | `str` | Uygulama adı (`"Calculator"`) |
-| `VERSION` | `str` | Sürüm (`"2.0.1"`) |
+| `VERSION` | `str` | Sürüm (`"2.0.2"`) |
 | `WINDOW_TITLE` | `str` | Varsayılan (Türkçe) pencere başlığı; asıl başlık `t("app.title")` |
 | `DEFAULT_W/H` | `int` | Varsayılan pencere boyutu (320×500) |
 | `CORNER_HIT` | `int` | Köşe çift-tık hassasiyeti (px) |
@@ -428,7 +428,7 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 
 ## 📝 Değişiklik Geçmişi
 
-### Yayımlanmamış
+### v2.0.2 — 2026
 - Düzeltme: 1e15'ten büyük sonuçlarla devam eden işlemler yanlış sonuç veriyordu
 - Düzeltme: Kopyalanan sonuç (`1.234,5`) yanlış yapıştırılıyordu; İngilizce biçim (`1,234.56`) de artık destekleniyor
 - Değişiklik: Yüzde Windows Hesap Makinesi gibi çalışır (`200 + 10% = 220`)
@@ -441,6 +441,9 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 - Kod düzeni: diyaloglar `ui/dialogs.py`'ye taşındı, tekrarlanan stiller `ui/theme.py`'de toplandı
 - Tek kopya kontrolü pencere başlığı yerine yerel soket kullanır; pencere başlığı seçili dile çevrilir, macOS/Linux'ta da açık pencere öne gelir
 - Kapatılan diyaloglar bellekten silinir
+- Klavye girişi klavye düzeninden bağımsız (Türkçe Q'da Shift+5 ile `%` doğru algılanır)
+- Düzeltme: `200 + 10 ÷ =` gibi durumlarda geçmişe yanlış satır yazılıyordu
+- `DEEPCALC_DEBUG=1` ile tuş/tıklama tanı modu
 - `pytest` birim testleri ve GitHub Actions ile otomatik test eklendi
 
 ### v2.0.1 — 2026
