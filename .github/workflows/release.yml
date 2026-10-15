@@ -1,10 +1,13 @@
 name: Sürüm Yayımla
 
-# "v2.0.2" gibi bir etiket gönderildiğinde: testleri çalıştırır, Windows exe'sini
-# derler ve GitHub'da o sürümü (Release) exe ekiyle birlikte yayımlar.
+# "v2.0.2" gibi bir etiket gönderildiğinde ya da Actions sekmesinden elle
+# başlatıldığında: testleri çalıştırır, Windows exe'sini derler ve GitHub'da o
+# sürümü (Release) exe ekiyle birlikte yayımlar. Elle başlatılınca etiket
+# core/constants.py içindeki VERSION'dan üretilir ve otomatik oluşturulur.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,14 +28,21 @@ jobs:
       - name: Bağımlılıklar
         run: pip install "PyQt6>=6.4.0" "pyinstaller>=6.0.0" pytest
 
-      - name: Etiket ile VERSION aynı mı?
+      - name: Sürüm etiketi
         shell: bash
         run: |
           VERSION=$(python -c "from core.constants import VERSION; print(VERSION)")
-          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "Etiket ($GITHUB_REF_NAME) ile core/constants.py VERSION ($VERSION) uyuşmuyor" >&2
-            exit 1
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+            if [ "v$VERSION" != "$TAG" ]; then
+              echo "Etiket ($TAG) ile core/constants.py VERSION ($VERSION) uyuşmuyor" >&2
+              exit 1
+            fi
+          else
+            TAG="v$VERSION"
           fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Yayımlanacak sürüm: $TAG"
 
       - name: Testler
         run: python -m pytest -q
@@ -45,7 +55,7 @@ jobs:
         run: |
           python - <<'EOF'
           import os, re
-          tag = os.environ["GITHUB_REF_NAME"]
+          tag = os.environ["TAG"]
           text = open("README.md", encoding="utf-8").read()
           m = re.search(rf"^### {re.escape(tag)}\b.*?\n(.*?)(?=^### |^## |\Z)", text, re.S | re.M)
           notes = m.group(1).strip() if m else f"Deep Calculator {tag}"
@@ -59,6 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp dist/DeepCalculator.exe Hesap.Makinesi.exe
-          gh release create "$GITHUB_REF_NAME" Hesap.Makinesi.exe \
-            --title "Deep Calculator $GITHUB_REF_NAME" \
+          gh release create "$TAG" Hesap.Makinesi.exe \
+            --target "$GITHUB_SHA" \
+            --title "Deep Calculator $TAG" \
             --notes-file release_notes.md
