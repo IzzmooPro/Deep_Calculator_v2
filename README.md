@@ -412,6 +412,13 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 
 > `main.spec` içinde icon ve diğer kaynak dosyaları zaten tanımlıdır.
 
+### Yeni Sürüm Yayımlama
+
+1. `core/constants.py` içindeki `VERSION` değerini ve bu README'deki değişiklik notlarını (`### vX.Y.Z — yıl`) güncelle.
+2. Ana dala `vX.Y.Z` etiketini gönder (`git tag v2.0.3 && git push origin v2.0.3`).
+
+`.github/workflows/release.yml` gerisini yapar: etiket ile `VERSION`'ın uyuştuğunu kontrol eder, testleri çalıştırır, Windows'ta exe'yi derler ve `Hesap.Makinesi.exe` ekiyle GitHub sürümünü (Release) README'deki notlarla yayımlar. Program içindeki otomatik güncelleme bu sürümü bulur.
+
 ---
 
 ## ⚠️ Bilinen Sınırlar

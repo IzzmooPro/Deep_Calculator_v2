@@ -1,0 +1,64 @@
+name: Sürüm Yayımla
+
+# "v2.0.2" gibi bir etiket gönderildiğinde: testleri çalıştırır, Windows exe'sini
+# derler ve GitHub'da o sürümü (Release) exe ekiyle birlikte yayımlar.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Bağımlılıklar
+        run: pip install "PyQt6>=6.4.0" "pyinstaller>=6.0.0" pytest
+
+      - name: Etiket ile VERSION aynı mı?
+        shell: bash
+        run: |
+          VERSION=$(python -c "from core.constants import VERSION; print(VERSION)")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Etiket ($GITHUB_REF_NAME) ile core/constants.py VERSION ($VERSION) uyuşmuyor" >&2
+            exit 1
+          fi
+
+      - name: Testler
+        run: python -m pytest -q
+
+      - name: Exe derle
+        run: pyinstaller main.spec
+
+      - name: Sürüm notları (README'den)
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import os, re
+          tag = os.environ["GITHUB_REF_NAME"]
+          text = open("README.md", encoding="utf-8").read()
+          m = re.search(rf"^### {re.escape(tag)}\b.*?\n(.*?)(?=^### |^## |\Z)", text, re.S | re.M)
+          notes = m.group(1).strip() if m else f"Deep Calculator {tag}"
+          open("release_notes.md", "w", encoding="utf-8").write(notes + "\n")
+          print(notes)
+          EOF
+
+      - name: Yayımla
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp dist/DeepCalculator.exe Hesap.Makinesi.exe
+          gh release create "$GITHUB_REF_NAME" Hesap.Makinesi.exe \
+            --title "Deep Calculator $GITHUB_REF_NAME" \
+            --notes-file release_notes.md
