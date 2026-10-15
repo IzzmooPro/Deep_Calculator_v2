@@ -2,7 +2,10 @@
 Deep Calculator — giriş noktası.
 
 Tek instance kontrolü: program zaten açıksa ikinci kopya açılmaz;
-mevcut pencere öne getirilir.
+mevcut pencere öne getirilir. Öne getirme isteği yerel bir soket
+(QLocalServer) üzerinden gönderilir — pencere başlığına bakılmaz; böylece
+başlık çevrilebilir ve Windows'un kendi "Hesap Makinesi" penceresiyle
+karışmaz.
 """
 
 from __future__ import annotations
@@ -15,7 +18,9 @@ try:
     from PyQt6.QtGui import QFont
     from PyQt6.QtWidgets import QApplication
 
-    from core import ORG, APP, WINDOW_TITLE
+    from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+
+    from core import ORG, APP
     from ui import CalculatorWindow
 except Exception:
     traceback.print_exc()
@@ -24,6 +29,16 @@ except Exception:
 
 
 # ── Tek Instance Kontrolü ─────────────────────────────────────────────────────
+
+def _server_name() -> str:
+    """Kullanıcıya özel yerel soket adı (farklı kullanıcılar birbirini görmez)."""
+    import getpass
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "user"
+    return f"DeepCalculator-{user}"
+
 
 def _check_single_instance() -> bool:
     """
@@ -52,12 +67,36 @@ def _already_running_windows() -> bool:
 
 
 def _bring_existing_window_to_front() -> None:
-    """Açık olan hesap makinesi penceresini öne getirir."""
-    import ctypes
-    hwnd = ctypes.windll.user32.FindWindowW(None, WINDOW_TITLE)
-    if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-        ctypes.windll.user32.SetForegroundWindow(hwnd)
+    """Açık olan kopyaya yerel soket üzerinden "öne gel" mesajı gönderir."""
+    if sys.platform == "win32":
+        # Kullanıcının az önce başlattığı bu süreç ön plana geçme hakkına
+        # sahiptir; bu hakkı açık olan kopyaya devreder.
+        import ctypes
+        ASFW_ANY = -1
+        ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)
+
+    sock = QLocalSocket()
+    sock.connectToServer(_server_name())
+    if sock.waitForConnected(1000):
+        sock.write(b"show")
+        sock.waitForBytesWritten(1000)
+        sock.disconnectFromServer()
+
+
+def _listen_for_other_instances(window: "CalculatorWindow") -> "QLocalServer":
+    """İkinci kopyadan gelen "öne gel" isteklerini dinler."""
+    server = QLocalServer(window)
+    QLocalServer.removeServer(_server_name())  # önceki çökmeden kalan soket
+    server.listen(_server_name())
+
+    def on_connection() -> None:
+        conn = server.nextPendingConnection()
+        if conn is not None:
+            conn.disconnected.connect(conn.deleteLater)
+        window.bring_to_front()
+
+    server.newConnection.connect(on_connection)
+    return server
 
 
 def _already_running_unix() -> bool:
@@ -70,6 +109,7 @@ def _already_running_unix() -> bool:
         _already_running_unix._lock_file = lf  # type: ignore[attr-defined]
         return False
     except OSError:
+        _bring_existing_window_to_front()
         return True
 
 
@@ -114,6 +154,7 @@ def main() -> None:
 
     window = CalculatorWindow()
     window.show()
+    _listen_for_other_instances(window)
 
     sys.exit(app.exec())
 

@@ -14,4 +14,5 @@ __all__ = [
     "WINDOW_TITLE",
     "CalculatorEngine", "CalculatorState", "CalculationError",
     "format_number", "format_display_expr",
+    "t", "set_language", "get_language", "SUPPORTED_LANGUAGES",
 ]

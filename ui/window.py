@@ -6,10 +6,14 @@ CalculatorWindow — ana pencere.
   - Hesap geçmişi paneli: ⏱ butonu ile açılır/kapanır
   - Hata-disable: hata sonrası operatör/fonksiyon butonları grileşir
   - M göstergesi: bellek doluyken display üzerinde küçük "M" etiketi
-  - Tek-instance: WINDOW_TITLE sabiti üzerinden pencere bulunur
+  - Tek-instance: ikinci kopya, main.py'deki yerel soket üzerinden
+    bring_to_front() çağırır
 """
 
 from __future__ import annotations
+
+import os
+import sys
 
 from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
 from PyQt6.QtGui import (
@@ -24,18 +28,32 @@ from PyQt6.QtWidgets import (
 )
 
 from core import (
-    OPS, KEY_MAP, FUNCTIONS,
-    ThemeName, ORG, APP, DEFAULT_W, DEFAULT_H, CORNER_HIT, WINDOW_TITLE,
+    OPS, FUNCTIONS,
+    ThemeName, ORG, APP, DEFAULT_W, DEFAULT_H, CORNER_HIT,
     CalculatorEngine, CalculatorState,
     format_display_expr,
 )
+from core.constants import key_to_token
+from core.formatter import parse_number, parse_pasted_number
 from assets.icon_data import ICON_DARK, ICON_LIGHT
 from ui.grid_layout import GRID
 from ui.help_dialog import show_help
-from ui.theme import THEMES, ThemePalette, btn_style, main_style
+from ui.dialogs import run_download, show_about, show_feedback, show_update_prompt
+from ui.theme import (
+    THEMES, ThemePalette, btn_style, flat_button_style, main_style, menu_style,
+)
 from ui.widgets import AnimatedButton
-from core.updater import UpdateChecker, SetupDownloader, launch_setup_and_quit
+from core.updater import SetupDownloader, UpdateChecker
 from core.i18n import t, set_language, get_language, SUPPORTED_LANGUAGES
+
+# Tanı modu: DEEPCALC_DEBUG=1 ile başlatılınca her tuş/tıklama konsola yazılır.
+_DEBUG = os.environ.get("DEEPCALC_DEBUG") == "1"
+
+
+def _debug(msg: str) -> None:
+    if _DEBUG:
+        print(f"[DEBUG] {msg}", flush=True)
+
 
 _DISABLE_ON_ERROR = OPS | frozenset({"%", "1/x", "x²", "2√x", "+/-"})
 
@@ -80,7 +98,7 @@ class CalculatorWindow(QMainWindow):
         saved_lang = self._settings.value("language", "tr", type=str)
         set_language(saved_lang)
 
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle(t("app.title"))
         self.setWindowIcon(self._icon_for_theme(self._theme_name))
         self.resize(DEFAULT_W, DEFAULT_H)
         self.setMinimumSize(320, 500)
@@ -326,31 +344,11 @@ class CalculatorWindow(QMainWindow):
         captured = str(value)
         self._history_visible = False
         self._close_history_flyout()
-        self._dispatch("C")
-
-        # Türkçe format: binlik=nokta, ondalık=virgül
-        # Önce binlik noktaları kaldır, ardından virgülü nokta yap → float parse.
-        # Sonra format_display_expr ile yeniden Türkçe gösterime çevir.
-        is_negative = captured.startswith("-")
-        raw = captured.lstrip("-")
-        # Binlik nokta kaldır, ondalık virgülü geçici olarak işaretle
-        normalized = raw.replace(".", "").replace(",", ".")
         try:
-            num = float(normalized)
+            num = parse_number(captured)  # geçmişteki değer uygulamanın kendi formatında
         except ValueError:
             return
-        # Tamsayı mı yoksa ondalıklı mı kontrol et
-        from core.formatter import format_number as _fmt
-        formatted = _fmt(num)
-        # Karakterleri tek tek dispatch et (Türkçe formatta)
-        for ch in formatted:
-            if ch.isdigit():
-                self._dispatch(ch)
-            elif ch == ",":
-                self._dispatch(",")
-            # binlik noktaları atla — engine kendi ekler
-        if is_negative:
-            self._dispatch("+/-")
+        self._load_value(num)
 
     def _clear_history(self) -> None:
         self._engine.state.history_log.clear()
@@ -361,6 +359,7 @@ class CalculatorWindow(QMainWindow):
     def _set_language(self, lang: str) -> None:
         set_language(lang)
         self._settings.setValue("language", lang)
+        self.setWindowTitle(t("app.title"))
         self._settings_btn.setToolTip(t("tooltip.settings"))
         self._hist_btn.setToolTip(t("tooltip.history"))
         self._fly_title.setText(t("history.title"))
@@ -415,25 +414,11 @@ class CalculatorWindow(QMainWindow):
         """
         self._settings_btn.setStyleSheet(_tb_css)
 
-        _mem_css = f"""
-            QPushButton {{
-                background-color: transparent; color: {p.text};
-                border: none; border-radius: 4px; font-size: 9pt;
-            }}
-            QPushButton:hover   {{ background-color: rgba(128,128,128,0.12); }}
-            QPushButton:pressed {{ background-color: rgba(128,128,128,0.22); }}
-        """
+        _mem_css = flat_button_style(p, "font-size: 9pt;")
         for b in self._mem_buttons.values():
             b.setStyleSheet(_mem_css)
-        self._hist_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent; color: {p.text};
-                border: none; border-radius: 4px;
-                font-family: 'Segoe MDL2 Assets'; font-size: 13pt;
-            }}
-            QPushButton:hover   {{ background-color: rgba(128,128,128,0.12); }}
-            QPushButton:pressed {{ background-color: rgba(128,128,128,0.22); }}
-        """)
+        self._hist_btn.setStyleSheet(
+            flat_button_style(p, "font-family: 'Segoe MDL2 Assets'; font-size: 13pt;"))
 
         for label, b in self._buttons.items():
             self._style_button(b, label, p)
@@ -501,6 +486,7 @@ class CalculatorWindow(QMainWindow):
     def _on_button_clicked(self) -> None:
         sender = self.sender()
         if isinstance(sender, QPushButton):
+            _debug(f"tıklama: buton={sender.text()!r}")
             self._dispatch(sender.text())
 
     def eventFilter(self, obj, event) -> bool:  # type: ignore
@@ -523,7 +509,9 @@ class CalculatorWindow(QMainWindow):
                 return
         if event.key() == Qt.Key.Key_H:
             self._show_help(); return
-        token = KEY_MAP.get(event.key())
+        token = key_to_token(event.key(), event.text())
+        _debug(f"tuş: key=0x{int(event.key()):X} text={event.text()!r} "
+               f"modifiers={event.modifiers()} → token={token!r}")
         if token:
             self._dispatch(token)
 
@@ -579,19 +567,22 @@ class CalculatorWindow(QMainWindow):
     def _paste_from_clipboard(self) -> None:
         text = QApplication.clipboard().text().strip()
         if not text: return
-        is_negative = text.startswith("-")
-        digits_part = text.lstrip("-+").strip()
-        if not digits_part: return
-        self._dispatch("C")
-        for ch in digits_part:
-            if ch.isdigit(): self._dispatch(ch)
-            elif ch in (",", "."): self._dispatch(",")
-        if is_negative: self._dispatch("+/-")
+        try:
+            num = parse_pasted_number(text)
+        except ValueError:
+            return  # sayı olmayan metin yok sayılır
+        self._load_value(num)
         self.setFocus(); self.activateWindow()
+
+    def _load_value(self, value: float) -> None:
+        """Yapıştırılan / geçmişten seçilen değeri son operand olarak yükler."""
+        self._last_token = ""
+        self._render(self._engine.load_value(value))
 
     # ── Dispatch & Render ─────────────────────────────────────────────────────
 
     def _dispatch(self, token: str) -> None:
+        _debug(f"işlem: {token!r}  (önce: {self._engine.state.expression!r})")
         self._last_token = token
         self._render(self._engine.press(token))
 
@@ -605,7 +596,7 @@ class CalculatorWindow(QMainWindow):
             }}
         """
         if state.error:
-            self._display.setText(state.error)
+            self._display.setText(t(state.error))
             self._display.setStyleSheet(base_css + "QLineEdit { color: #FF3B30; }")
         else:
             text = format_display_expr(state.expression or "0")
@@ -641,7 +632,7 @@ class CalculatorWindow(QMainWindow):
 
     def _animate_result(self, text: str, base_css: str) -> None:
         """Apple tarzı sonuç animasyonu — fade + hafif yukarıdan kayış."""
-        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, QPoint
+        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
         from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
         self._display.setText(text)
@@ -669,15 +660,7 @@ class CalculatorWindow(QMainWindow):
     def _show_display_menu(self, pos: QPoint) -> None:
         p = THEMES[self._theme_name]
         menu = QMenu(self._display)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background-color: {p.surface}; color: {p.text};
-                border: 1px solid rgba(128,128,128,0.25); border-radius: 8px; padding: 4px;
-            }}
-            QMenu::item {{ padding: 7px 22px 7px 10px; border-radius: 4px; }}
-            QMenu::item:selected {{ background-color: {p.accent}; color: #FFF; }}
-            QMenu::separator {{ height: 1px; background: rgba(128,128,128,0.2); margin: 3px 6px; }}
-        """)
+        menu.setStyleSheet(menu_style(p))
         copy_act = QAction(t("menu.copy"), self)
         copy_act.setIcon(self._draw_icon("copy", False))
         copy_act.triggered.connect(self._copy_result)
@@ -698,16 +681,9 @@ class CalculatorWindow(QMainWindow):
     def _show_settings_menu(self) -> None:
         p = THEMES[self._theme_name]
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background-color: {p.surface}; color: {p.text};
-                border: 1px solid rgba(128,128,128,0.25);
-                border-radius: 10px; padding: 4px;
-            }}
-            QMenu::item {{ padding: 7px 24px 7px 12px; border-radius: 6px; font-size: 9pt; }}
-            QMenu::item:selected {{ background-color: {p.accent}; color: #FFF; }}
-            QMenu::separator {{ height: 1px; background: rgba(128,128,128,0.2); margin: 4px 8px; }}
-        """)
+        menu.setStyleSheet(menu_style(p, radius=10, item_padding="7px 24px 7px 12px",
+                                      item_radius=6, item_extra="font-size: 9pt;",
+                                      separator_margin="4px 8px"))
         theme_menu = menu.addMenu(t("settings.theme"))
         light_action = QAction(t("settings.theme.light"), self, checkable=True)
         dark_action  = QAction(t("settings.theme.dark"),  self, checkable=True)
@@ -758,396 +734,41 @@ class CalculatorWindow(QMainWindow):
         show_help(self, THEMES[self._theme_name])
 
     def _show_about(self) -> None:
-        from PyQt6.QtWidgets import (
-            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
-        )
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-        from core.constants import VERSION
-        p = THEMES[self._theme_name]
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(t("about.title"))
-        dlg.setFixedSize(300, 340)
-        dlg.setStyleSheet(f"QDialog {{ background-color: {p.bg}; }}")
-
-        lay = QVBoxLayout(dlg)
-        lay.setContentsMargins(24, 24, 24, 20)
-        lay.setSpacing(10)
-
-        title = QLabel("🧮  Deep Calculator")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"color: {p.text}; font-size: 14pt; font-weight: 700;")
-        lay.addWidget(title)
-
-        version_lbl = QLabel(t("about.version", version=VERSION))
-        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_lbl.setStyleSheet(f"color: {p.history_text}; font-size: 9pt;")
-        lay.addWidget(version_lbl)
-
-        lay.addSpacing(6)
-
-        for label, value in [
-            (t("about.developer"), "Izzmoo"),
-            (t("about.contact"),   "IzzmooPro@gmail.com"),
-            (t("about.license"),   t("about.license.value")),
-        ]:
-            row = QLabel(f"<b>{label}:</b>  {value}")
-            row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            row.setStyleSheet(f"color: {p.text}; font-size: 9pt;")
-            lay.addWidget(row)
-
-        gh_url = "https://github.com/IzzmooPro/Deep_Calculator_v2"
-        gh_link = QLabel(f"<a href='{gh_url}' style='color:{p.accent};text-decoration:none;'>github.com/IzzmooPro/Deep_Calculator_v2</a>")
-        gh_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        gh_link.setStyleSheet("font-size: 8pt;")
-        gh_link.setOpenExternalLinks(False)
-        gh_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        gh_link.linkActivated.connect(lambda _u=gh_url: QDesktopServices.openUrl(QUrl(_u)))
-        lay.addWidget(gh_link)
-
-        note = QLabel(t("about.note"))
-        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note.setWordWrap(True)
-        note.setStyleSheet(f"color: {p.history_text}; font-size: 8pt;")
-        lay.addWidget(note)
-
-        # ── Güncelleme bölümü ──
-        lay.addSpacing(6)
-        sep = QLabel()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: rgba(128,128,128,0.2);")
-        lay.addWidget(sep)
-        lay.addSpacing(6)
-
-        update_status = QLabel(t("about.update.idle"))
-        update_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        update_status.setWordWrap(True)
-        update_status.setStyleSheet(f"color: {p.history_text}; font-size: 9pt;")
-        lay.addWidget(update_status)
-
-        btn_row = QHBoxLayout()
-
-        check_btn = QPushButton(t("about.update.btn"))
-        check_btn.setFixedHeight(32)
-        check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        check_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {p.btn_function}; color: {p.text};
-                border: none; border-radius: 4px;
-                font-size: 9pt; padding: 0 14px;
-            }}
-            QPushButton:hover {{ background-color: {p.btn_function_hover}; }}
-        """)
-        btn_row.addWidget(check_btn)
-
-        ok_btn = QPushButton(t("about.ok"))
-        ok_btn.setFixedHeight(32)
-        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        ok_btn.clicked.connect(dlg.accept)
-        ok_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {p.accent}; color: #FFF;
-                border: none; border-radius: 4px;
-                font-size: 9pt; font-weight: 600; padding: 0 14px;
-            }}
-            QPushButton:hover {{ background-color: {p.btn_operator_hover}; }}
-        """)
-        btn_row.addWidget(ok_btn)
-        lay.addLayout(btn_row)
-
-        _checker: list = []
-
-        def do_check() -> None:
-            check_btn.setEnabled(False)
-            check_btn.setText(t("about.update.checking.btn"))
-            update_status.setText(t("about.update.checking"))
-            update_status.setStyleSheet(f"color: {p.history_text}; font-size: 9pt;")
-
-            c = UpdateChecker()
-            _checker.append(c)
-
-            def on_available(tag: str, url: str) -> None:
-                update_status.setText(t("about.update.available", tag=tag))
-                update_status.setStyleSheet(f"color: {p.accent}; font-size: 9pt; font-weight: 600;")
-                check_btn.setText(t("about.update.do"))
-                check_btn.setEnabled(True)
-                check_btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {p.accent}; color: #FFF;
-                        border: none; border-radius: 4px;
-                        font-size: 9pt; font-weight: 600; padding: 0 14px;
-                    }}
-                    QPushButton:hover {{ background-color: {p.btn_operator_hover}; }}
-                """)
-                try:
-                    check_btn.clicked.disconnect()
-                except Exception:
-                    pass
-                check_btn.clicked.connect(lambda: (dlg.accept(), self._start_download(tag, url)))
-
-            def on_up_to_date() -> None:
-                update_status.setText(t("about.update.uptodate"))
-                update_status.setStyleSheet(f"color: {p.text}; font-size: 9pt;")
-                check_btn.setText(t("about.update.btn"))
-                check_btn.setEnabled(True)
-
-            def on_failed() -> None:
-                update_status.setText(t("about.update.failed"))
-                update_status.setStyleSheet("color: #FF3B30; font-size: 9pt;")
-                check_btn.setText(t("about.update.retry"))
-                check_btn.setEnabled(True)
-
-            c.update_available.connect(on_available)
-            c.up_to_date.connect(on_up_to_date)
-            c.check_failed.connect(on_failed)
-            c.start()
-
-        check_btn.clicked.connect(do_check)
-        dlg.exec()
+        show_about(self, THEMES[self._theme_name], self._start_download)
 
     def _show_feedback_dialog(self) -> None:
-        from PyQt6.QtWidgets import (
-            QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-            QPushButton, QTextEdit, QComboBox
-        )
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-        import urllib.parse
-
-        p = THEMES[self._theme_name]
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(t("feedback.title"))
-        dlg.setFixedSize(320, 280)
-        dlg.setStyleSheet(f"QDialog {{ background-color: {p.bg}; }}")
-
-        lay = QVBoxLayout(dlg)
-        lay.setContentsMargins(24, 20, 24, 20)
-        lay.setSpacing(10)
-
-        title = QLabel(t("feedback.heading"))
-        title.setStyleSheet(f"color: {p.text}; font-size: 12pt; font-weight: 700;")
-        lay.addWidget(title)
-
-        sub = QLabel(t("feedback.subtitle"))
-        sub.setWordWrap(True)
-        sub.setStyleSheet(f"color: {p.history_text}; font-size: 8pt;")
-        lay.addWidget(sub)
-
-        # Kategori
-        category = QComboBox()
-        category.addItems([t("feedback.cat.suggest"), t("feedback.cat.bug"), t("feedback.cat.general")])
-        category.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {p.btn_function}; color: {p.text};
-                border: none; border-radius: 4px;
-                padding: 6px 10px; font-size: 9pt;
-            }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
-            QComboBox QAbstractItemView {{
-                background-color: {p.surface}; color: {p.text};
-                border: 1px solid rgba(128,128,128,0.2);
-                selection-background-color: {p.accent};
-            }}
-        """)
-        lay.addWidget(category)
-
-        # Metin kutusu
-        text_edit = QTextEdit()
-        text_edit.setPlaceholderText(t("feedback.placeholder"))
-        text_edit.setFixedHeight(90)
-        text_edit.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: {p.btn_function}; color: {p.text};
-                border: none; border-radius: 4px;
-                padding: 8px; font-size: 9pt;
-            }}
-        """)
-        lay.addWidget(text_edit)
-
-        # Butonlar
-        btn_row = QHBoxLayout()
-        cancel_btn = QPushButton(t("feedback.cancel"))
-        cancel_btn.setFixedHeight(32)
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.clicked.connect(dlg.reject)
-        cancel_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {p.btn_function}; color: {p.text};
-                border: none; border-radius: 4px;
-                font-size: 9pt; padding: 0 14px;
-            }}
-            QPushButton:hover {{ background-color: {p.btn_function_hover}; }}
-        """)
-
-        send_btn = QPushButton(t("feedback.send"))
-        send_btn.setFixedHeight(32)
-        send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        send_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {p.accent}; color: #FFF;
-                border: none; border-radius: 4px;
-                font-size: 9pt; font-weight: 600; padding: 0 14px;
-            }}
-            QPushButton:hover {{ background-color: {p.btn_operator_hover}; }}
-        """)
-
-        def send() -> None:
-            cat = category.currentText()
-            body = text_edit.toPlainText().strip()
-            if not body:
-                body = "(Açıklama girilmedi)"
-
-            from core.constants import VERSION
-            full_body = f"{body}\n\n---\n_Deep Calculator v{VERSION}_"
-
-            title_str = urllib.parse.quote(f"{cat} — Deep Calculator")
-            body_str  = urllib.parse.quote(full_body)
-            label_map = {
-                t("feedback.cat.suggest"): "enhancement",
-                t("feedback.cat.bug"):     "bug",
-                t("feedback.cat.general"): "question",
-            }
-            label     = label_map.get(cat, "question")
-
-            url = (
-                f"https://github.com/IzzmooPro/Deep_Calculator_v2/issues/new"
-                f"?title={title_str}&body={body_str}&labels={label}"
-            )
-            QDesktopServices.openUrl(QUrl(url))
-            dlg.accept()
-
-        send_btn.clicked.connect(send)
-        btn_row.addWidget(cancel_btn)
-        btn_row.addStretch()
-        btn_row.addWidget(send_btn)
-        lay.addLayout(btn_row)
-
-        dlg.exec()
+        show_feedback(self, THEMES[self._theme_name])
 
     # ── Güncelleme ────────────────────────────────────────────────────────────
 
     def _auto_check_update(self) -> None:
         """Program açılıştan 3 sn sonra arka planda kontrol eder."""
-        self._update_checker = UpdateChecker()
+        self._update_checker = UpdateChecker(self)
         self._update_checker.update_available.connect(self._on_update_available)
         self._update_checker.start()
 
-    def _on_update_available(self, new_version: str, download_url: str) -> None:
+    def _on_update_available(self, new_version: str, download_url: str, digest: str) -> None:
         """Yeni sürüm bulunduğunda bildirim göster."""
-        self._show_update_prompt(new_version, download_url, auto=True)
+        show_update_prompt(self, THEMES[self._theme_name],
+                           new_version, download_url, digest, self._start_download)
 
-    def _show_update_prompt(self, new_version: str, download_url: str, auto: bool = False) -> None:
-        """Yeni sürüm bildirim penceresi."""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
-        from core.constants import VERSION
-        p = THEMES[self._theme_name]
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(t("update.title"))
-        dlg.setFixedSize(320, 180)
-        dlg.setStyleSheet(f"QDialog {{ background-color: {p.bg}; }}")
-
-        lay = QVBoxLayout(dlg)
-        lay.setContentsMargins(24, 24, 24, 20)
-        lay.setSpacing(12)
-
-        title = QLabel(f"🔄  {t('update.title')}")
-        title.setStyleSheet(f"color: {p.text}; font-size: 12pt; font-weight: 700;")
-        lay.addWidget(title)
-
-        info = QLabel(t("update.info", current=VERSION, new=new_version))
-        info.setWordWrap(True)
-        info.setStyleSheet(f"color: {p.history_text}; font-size: 9pt;")
-        lay.addWidget(info)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-
-        later_btn = QPushButton(t("update.later"))
-        later_btn.setFixedHeight(32)
-        later_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        later_btn.clicked.connect(dlg.reject)
-        later_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {p.btn_function}; color: {p.text};
-                border: none; border-radius: 4px;
-                font-size: 9pt; padding: 0 16px;
-            }}
-            QPushButton:hover {{ background-color: {p.btn_function_hover}; }}
-        """)
-
-        update_btn = QPushButton(t("update.do"))
-        update_btn.setFixedHeight(32)
-        update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        update_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {p.accent}; color: #FFF;
-                border: none; border-radius: 4px;
-                font-size: 9pt; font-weight: 600; padding: 0 16px;
-            }}
-            QPushButton:hover {{ background-color: {p.btn_operator_hover}; }}
-        """)
-        update_btn.clicked.connect(lambda: (dlg.accept(), self._start_download(new_version, download_url)))
-
-        btn_row.addWidget(later_btn)
-        btn_row.addWidget(update_btn)
-        lay.addLayout(btn_row)
-
-        dlg.exec()
-
-    def _start_download(self, new_version: str, download_url: str) -> None:
+    def _start_download(self, new_version: str, download_url: str, digest: str = "") -> None:
         """İndirme başlatır, progress penceresi gösterir."""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
-        p = THEMES[self._theme_name]
+        self._downloader = run_download(
+            self, THEMES[self._theme_name], new_version, download_url, digest)
 
-        if not download_url:
-            # URL yoksa GitHub sayfasını aç
-            from PyQt6.QtGui import QDesktopServices
-            from PyQt6.QtCore import QUrl
-            QDesktopServices.openUrl(QUrl(f"https://github.com/{__import__('core.updater', fromlist=['OWNER_REPO']).OWNER_REPO}/releases/latest"))
-            return
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(t("update.downloading"))
-        dlg.setFixedSize(300, 130)
-        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)
-        dlg.setStyleSheet(f"QDialog {{ background-color: {p.bg}; }}")
-
-        lay = QVBoxLayout(dlg)
-        lay.setContentsMargins(24, 24, 24, 20)
-        lay.setSpacing(12)
-
-        lbl = QLabel(t("update.progress", version=new_version))
-        lbl.setStyleSheet(f"color: {p.text}; font-size: 10pt;")
-        lay.addWidget(lbl)
-
-        bar = QProgressBar()
-        bar.setRange(0, 100)
-        bar.setValue(0)
-        bar.setStyleSheet(f"""
-            QProgressBar {{
-                background-color: {p.btn_function}; border-radius: 4px; height: 8px;
-                text-align: center; color: transparent;
-            }}
-            QProgressBar::chunk {{ background-color: {p.accent}; border-radius: 4px; }}
-        """)
-        lay.addWidget(bar)
-
-        self._downloader = SetupDownloader(download_url)
-        self._downloader.progress.connect(bar.setValue)
-        self._downloader.finished_ok.connect(lambda path: (dlg.accept(), launch_setup_and_quit(path)))
-        self._downloader.failed.connect(lambda: (dlg.accept(), self._on_download_failed()))
-        self._downloader.start()
-
-        dlg.exec()
-
-    def _on_download_failed(self) -> None:
-        from PyQt6.QtWidgets import QMessageBox
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-        QDesktopServices.openUrl(QUrl("https://github.com/IzzmooPro/Deep_Calculator_v2/releases/latest"))
+    def bring_to_front(self) -> None:
+        """Simge durumundaysa geri yükler ve pencereyi öne getirir."""
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if sys.platform == "win32":
+            # İkinci kopya AllowSetForegroundWindow ile izin verdiği için
+            # Windows burada pencereyi gerçekten öne alır.
+            import ctypes
+            ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
 
     # ── Pencere Olayları ──────────────────────────────────────────────────────
 

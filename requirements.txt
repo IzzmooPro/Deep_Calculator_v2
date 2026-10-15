@@ -2,3 +2,6 @@ PyQt6>=6.4.0
 
 # EXE derlemek için (isteğe bağlı)
 pyinstaller>=6.0.0
+
+# Testler için (isteğe bağlı)
+pytest>=7.0

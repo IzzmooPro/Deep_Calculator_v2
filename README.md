@@ -91,6 +91,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### Testler
+
+```bash
+pip install pytest
+python -m pytest
+```
+
 ---
 
 ## 📁 Proje Yapısı
@@ -110,15 +117,20 @@ Deep_Calculator_v2/
 │   ├── __init__.py          # Katman public API'si
 │   ├── constants.py         # Sabitler, OPS, FUNCTIONS, KEY_MAP, ALLOWED_NODES
 │   ├── engine.py            # CalculatorEngine + CalculatorState
-│   └── formatter.py         # Türkçe sayı formatlama fonksiyonları
+│   ├── formatter.py         # Türkçe sayı formatlama / okuma fonksiyonları
+│   ├── i18n.py              # Çeviriler (tr, en, de, fr, es)
+│   └── updater.py           # GitHub üzerinden güncelleme kontrolü ve indirme
 │
 ├── ui/                      # Arayüz katmanı
 │   ├── __init__.py          # Katman public API'si
 │   ├── window.py            # CalculatorWindow — ana pencere
 │   ├── grid_layout.py       # Buton ızgara tanımı (GRID listesi)
-│   ├── theme.py             # ThemePalette, LIGHT, DARK, btn_style()
+│   ├── theme.py             # ThemePalette, LIGHT, DARK, ortak stil yardımcıları
 │   ├── widgets.py           # AnimatedButton (QPushButton subclass)
+│   ├── dialogs.py           # Hakkında, Geri Bildirim, Güncelleme, İndirme diyalogları
 │   └── help_dialog.py       # Kullanım kılavuzu diyalogu
+│
+├── tests/                   # pytest birim testleri (engine, formatter, updater)
 │
 ├── assets/                  # Uygulama kaynakları
 │   ├── __init__.py          # Paket tanımı
@@ -206,7 +218,18 @@ Görüntü (Türkçe)   →   Python ifadesi
 10÷2               →   10/2
 ```
 
-Bu dönüşüm `engine._to_py()` içinde yapılır; binlik noktalar her iki yanında rakam olan noktalar olarak tespit edilip kaldırılır.
+Bu dönüşüm `engine._to_py()` içinde yapılır: ifade operatörlerden bölünür, her operand `formatter.parse_number()` ile okunur (binlik noktalar atılır, virgül ondalık olur).
+
+### Tam Hassasiyet
+
+Ekranda en fazla 12 anlamlı basamak görünür, ama hesaplanan her operandın (sonuç, `1/x`, `√x`, `%`, `MR`, yapıştırılan değer) tam `float` değeri `CalculatorState.exact` içinde saklanır ve sonraki işlemlerde bu değer kullanılır:
+
+```
+3  1/x  →  ekranda 0,333333333333   (saklanan: 0.3333333333333333)
+×  3  = →  1                         (eskiden 0,999999999999)
+```
+
+Kayıt, operandın ekrandaki metni değişmediği sürece geçerlidir; kullanıcı sayıyı düzenlerse ekrandaki değer esas alınır.
 
 ### Tek Instance Kontrolü
 
@@ -215,7 +238,7 @@ Bu dönüşüm `engine._to_py()` içinde yapılır; binlik noktalar her iki yan�
 | **Windows** | `CreateMutexW("Global\DeepCalculator_SingleInstance_Mutex")` |
 | **macOS/Linux** | `/tmp/deep_calculator.lock` dosya kilidi (`fcntl`) |
 
-Program zaten açıksa Windows'ta mevcut pencere öne getirilir (`FindWindowW` ile `WINDOW_TITLE` sabiti kullanılır).
+Program zaten açıksa ikinci kopya, yerel bir soket (`QLocalServer` / `QLocalSocket`, adı `DeepCalculator-<kullanıcı>`) üzerinden açık olan kopyaya "öne gel" mesajı gönderip kapanır; açık pencere simge durumundaysa geri yüklenir ve öne getirilir. Pencere başlığına bakılmadığı için başlık seçili dile çevrilebilir ve Windows'un kendi "Hesap Makinesi" penceresiyle karışmaz. Windows'ta ikinci kopya `AllowSetForegroundWindow` ile öne geçme hakkını açık kopyaya devreder.
 
 ---
 
@@ -228,7 +251,7 @@ Program zaten açıksa Windows'ta mevcut pencere öne getirilir (`FindWindowW` i
 | `ORG` | `str` | Organizasyon adı (`"DeepCalc"`) |
 | `APP` | `str` | Uygulama adı (`"Calculator"`) |
 | `VERSION` | `str` | Sürüm (`"2.0.1"`) |
-| `WINDOW_TITLE` | `str` | Pencere başlığı — tek yerde tanımlı |
+| `WINDOW_TITLE` | `str` | Varsayılan (Türkçe) pencere başlığı; asıl başlık `t("app.title")` |
 | `DEFAULT_W/H` | `int` | Varsayılan pencere boyutu (320×500) |
 | `CORNER_HIT` | `int` | Köşe çift-tık hassasiyeti (px) |
 | `OPS` | `frozenset` | Operatör karakterleri: `+  −  ×  ÷` |
@@ -248,7 +271,7 @@ Her buton basışının giriş noktası. Token'a göre uygun handler çağrılı
 | `"C"` | `_handle_clear` — bellek ve geçmişi koruyarak sıfırla |
 | `"CE"` | `_handle_clear_entry` — son operandı sil |
 | `"⌫"` | `_handle_backspace` — son karakteri sil |
-| `"%"` | `_handle_percent` — operandı 100'e böl |
+| `"%"` | `_handle_percent` — `a ± b%` → `a ± a·b/100`, `a ×÷ b%` → `b/100` |
 | `"+/-"` | `_handle_negate` — işaret değiştir |
 | `"1/x"` | `_handle_reciprocal` — tersini al |
 | `"x²"` | `_handle_square` — karesini al |
@@ -261,7 +284,9 @@ Her buton basışının giriş noktası. Token'a göre uygun handler çağrılı
 
 | Fonksiyon | Açıklama |
 |---|---|
-| `format_number(value)` | `float/int → "1.234.567,89"` |
+| `format_number(value)` | `float/int → "1.234.567,89"` (çok büyük/küçük: `"1,5e16"`) |
+| `parse_number(text)` | `format_number` çıktısını geri okur |
+| `parse_pasted_number(text)` | Panodan gelen TR/EN biçimli sayıyı okur |
 | `format_display_expr(expr)` | İfade içindeki tüm sayılara binlik nokta uygular |
 
 ### `ui/window.py`
@@ -395,13 +420,28 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 |---|---|
 | **Tema otomatik güncelleme yok** | Windows teması değişince program yeniden başlatılmalı |
 | **Bilimsel mod yok** | Yalnızca standart hesap makinesi işlemleri |
-| **Sayı büyüklüğü** | `≥ 1e15` değerler bilimsel gösterime geçer (`1.23e+15`) |
-| **Ondalık hassasiyet** | 12 anlamlı basamak (`:.12g` formatı) |
+| **Sayı büyüklüğü** | `≥ 1e15` ve `< 1e-10` değerler bilimsel gösterime geçer (`1,23e15`, `2,5e-11`) |
+| **Ondalık hassasiyet** | Ekranda 12 anlamlı basamak; hesaplamalarda tam `float` (≈15–17 basamak) |
 | **Negatif karekök** | Hata verir — karmaşık sayı desteği yok |
 
 ---
 
 ## 📝 Değişiklik Geçmişi
+
+### Yayımlanmamış
+- Düzeltme: 1e15'ten büyük sonuçlarla devam eden işlemler yanlış sonuç veriyordu
+- Düzeltme: Kopyalanan sonuç (`1.234,5`) yanlış yapıştırılıyordu; İngilizce biçim (`1,234.56`) de artık destekleniyor
+- Değişiklik: Yüzde Windows Hesap Makinesi gibi çalışır (`200 + 10% = 220`)
+- Düzeltme: Taşma durumunda program çökmek yerine hata gösterir
+- Hata mesajları seçilen dile çevrilir
+- Güncelleme: kurulum dosyası seçimi düzeltildi, indirilen dosya SHA-256 ile doğrulanır, otomatik kurulum yalnızca Windows'ta
+- Düzeltme: Ara sonuçlar ekrandaki 12 basamağa yuvarlanmadan hesaplanır (`1/3 × 3 = 1`)
+- Düzeltme: "Hakkında" penceresi güncelleme kontrolü sürerken kapatılınca program çökebiliyordu
+- Program, güncelleme kontrolü sürerken kapatılınca artık temiz kapanıyor
+- Kod düzeni: diyaloglar `ui/dialogs.py`'ye taşındı, tekrarlanan stiller `ui/theme.py`'de toplandı
+- Tek kopya kontrolü pencere başlığı yerine yerel soket kullanır; pencere başlığı seçili dile çevrilir, macOS/Linux'ta da açık pencere öne gelir
+- Kapatılan diyaloglar bellekten silinir
+- `pytest` birim testleri ve GitHub Actions ile otomatik test eklendi
 
 ### v2.0.1 — 2026
 - Sürüm numarası güncellendi

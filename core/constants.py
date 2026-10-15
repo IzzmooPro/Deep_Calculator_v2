@@ -19,8 +19,8 @@ DEFAULT_W  = 320
 DEFAULT_H  = 500
 CORNER_HIT = 24
 
-# Tek-instance kontrolünde pencereyi bulmak için kullanılan başlık sabiti.
-# window.py'deki setWindowTitle() ile buradaki değer her zaman eşleşmelidir.
+# Varsayılan (Türkçe) pencere başlığı. Asıl başlık seçili dile göre
+# t("app.title") ile belirlenir; tek-instance kontrolü başlığa bağlı değildir.
 WINDOW_TITLE = "Hesap Makinesi"
 
 # ── Tip Takma Adları ──────────────────────────────────────────────────────────
@@ -50,6 +50,28 @@ KEY_MAP: dict[int, str] = {
     Qt.Key.Key_Delete: "CE",   Qt.Key.Key_Percent: "%",
     Qt.Key.Key_F9: "+/-",
 }
+
+# Klavyenin ürettiği karakter → token. Klavye düzeninden bağımsızdır:
+# Türkçe Q klavyede "%" Shift+5, "/" Shift+7, "+" Shift+4 ile yazılır; bu
+# durumlarda tuş kodu her platformda güvenilir değildir, karakter ise doğrudur.
+KEY_TEXT_MAP: dict[str, str] = {
+    "+": "+", "-": "−", "−": "−",
+    "*": "×", "×": "×",
+    "/": "÷", "÷": "÷",
+    "%": "%",
+    ",": ",", ".": ",",
+    "=": "=",
+}
+
+
+def key_to_token(key: int, text: str) -> str | None:
+    """Klavye olayını token'a çevirir: önce üretilen karaktere, sonra tuş koduna bakar."""
+    if len(text) == 1:
+        if text.isdigit():
+            return text
+        if text in KEY_TEXT_MAP:
+            return KEY_TEXT_MAP[text]
+    return KEY_MAP.get(key)
 
 # ── AST Güvenli Node Tipleri ──────────────────────────────────────────────────
 
