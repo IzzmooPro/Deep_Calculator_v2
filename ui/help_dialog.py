@@ -166,3 +166,4 @@ def show_help(parent, palette: ThemePalette) -> None:
     """)
     outer.addWidget(close_btn)
     dlg.exec()
+    dlg.deleteLater()

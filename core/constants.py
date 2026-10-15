@@ -19,8 +19,8 @@ DEFAULT_W  = 320
 DEFAULT_H  = 500
 CORNER_HIT = 24
 
-# Tek-instance kontrolünde pencereyi bulmak için kullanılan başlık sabiti.
-# window.py'deki setWindowTitle() ile buradaki değer her zaman eşleşmelidir.
+# Varsayılan (Türkçe) pencere başlığı. Asıl başlık seçili dile göre
+# t("app.title") ile belirlenir; tek-instance kontrolü başlığa bağlı değildir.
 WINDOW_TITLE = "Hesap Makinesi"
 
 # ── Tip Takma Adları ──────────────────────────────────────────────────────────

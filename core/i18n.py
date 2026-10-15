@@ -21,6 +21,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── Türkçe ────────────────────────────────────────────────────────────────
     "tr": {
         "lang.name": "Türkçe",
+        "app.title": "Hesap Makinesi",
 
         # Tooltip
         "tooltip.settings": "Ayarlar",
@@ -140,6 +141,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── İngilizce ─────────────────────────────────────────────────────────────
     "en": {
         "lang.name": "English",
+        "app.title": "Calculator",
 
         "tooltip.settings": "Settings",
         "tooltip.history":  "History",
@@ -251,6 +253,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── Almanca ───────────────────────────────────────────────────────────────
     "de": {
         "lang.name": "Deutsch",
+        "app.title": "Rechner",
 
         "tooltip.settings": "Einstellungen",
         "tooltip.history":  "Verlauf",
@@ -362,6 +365,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── Fransızca ─────────────────────────────────────────────────────────────
     "fr": {
         "lang.name": "Français",
+        "app.title": "Calculatrice",
 
         "tooltip.settings": "Paramètres",
         "tooltip.history":  "Historique",
@@ -473,6 +477,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── İspanyolca ────────────────────────────────────────────────────────────
     "es": {
         "lang.name": "Español",
+        "app.title": "Calculadora",
 
         "tooltip.settings": "Configuración",
         "tooltip.history":  "Historial",

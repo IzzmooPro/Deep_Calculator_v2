@@ -118,6 +118,8 @@ def show_about(parent: QWidget, p: ThemePalette, on_update: UpdateCallback) -> N
     btn_row.addWidget(ok_btn)
     lay.addLayout(btn_row)
 
+    checkers: list[UpdateChecker] = []
+
     def do_check() -> None:
         check_btn.setEnabled(False)
         check_btn.setText(t("about.update.checking.btn"))
@@ -126,6 +128,7 @@ def show_about(parent: QWidget, p: ThemePalette, on_update: UpdateCallback) -> N
 
         # parent = ana pencere: diyalog kapansa da iş güvenle tamamlanır.
         checker = UpdateChecker(parent)
+        checkers.append(checker)
 
         def on_available(tag: str, url: str, digest: str) -> None:
             update_status.setText(t("about.update.available", tag=tag))
@@ -158,6 +161,17 @@ def show_about(parent: QWidget, p: ThemePalette, on_update: UpdateCallback) -> N
 
     check_btn.clicked.connect(do_check)
     dlg.exec()
+
+    # Diyalog silinmeden önce, hâlâ sürebilecek kontrollerin bu diyaloğun
+    # etiketlerine yazmasını engelle.
+    for checker in checkers:
+        for signal in (checker.update_available, checker.up_to_date, checker.check_failed):
+            try:
+                signal.disconnect()
+            except TypeError:
+                pass
+        checker.deleteLater()
+    dlg.deleteLater()
 
 
 # ── Geri Bildirim ─────────────────────────────────────────────────────────────
@@ -233,6 +247,7 @@ def show_feedback(parent: QWidget, p: ThemePalette) -> None:
     lay.addLayout(btn_row)
 
     dlg.exec()
+    dlg.deleteLater()
 
 
 # ── Güncelleme ────────────────────────────────────────────────────────────────
@@ -258,6 +273,7 @@ def show_update_prompt(parent: QWidget, p: ThemePalette, new_version: str,
     lay.addLayout(btn_row)
 
     dlg.exec()
+    dlg.deleteLater()
 
 
 def run_download(parent: QWidget, p: ThemePalette, new_version: str,
@@ -296,4 +312,5 @@ def run_download(parent: QWidget, p: ThemePalette, new_version: str,
     downloader.start()
 
     dlg.exec()
+    dlg.deleteLater()
     return downloader

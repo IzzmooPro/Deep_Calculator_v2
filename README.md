@@ -238,7 +238,7 @@ Kayıt, operandın ekrandaki metni değişmediği sürece geçerlidir; kullanıc
 | **Windows** | `CreateMutexW("Global\DeepCalculator_SingleInstance_Mutex")` |
 | **macOS/Linux** | `/tmp/deep_calculator.lock` dosya kilidi (`fcntl`) |
 
-Program zaten açıksa Windows'ta mevcut pencere öne getirilir (`FindWindowW` ile `WINDOW_TITLE` sabiti kullanılır).
+Program zaten açıksa ikinci kopya, yerel bir soket (`QLocalServer` / `QLocalSocket`, adı `DeepCalculator-<kullanıcı>`) üzerinden açık olan kopyaya "öne gel" mesajı gönderip kapanır; açık pencere simge durumundaysa geri yüklenir ve öne getirilir. Pencere başlığına bakılmadığı için başlık seçili dile çevrilebilir ve Windows'un kendi "Hesap Makinesi" penceresiyle karışmaz. Windows'ta ikinci kopya `AllowSetForegroundWindow` ile öne geçme hakkını açık kopyaya devreder.
 
 ---
 
@@ -251,7 +251,7 @@ Program zaten açıksa Windows'ta mevcut pencere öne getirilir (`FindWindowW` i
 | `ORG` | `str` | Organizasyon adı (`"DeepCalc"`) |
 | `APP` | `str` | Uygulama adı (`"Calculator"`) |
 | `VERSION` | `str` | Sürüm (`"2.0.1"`) |
-| `WINDOW_TITLE` | `str` | Pencere başlığı — tek yerde tanımlı |
+| `WINDOW_TITLE` | `str` | Varsayılan (Türkçe) pencere başlığı; asıl başlık `t("app.title")` |
 | `DEFAULT_W/H` | `int` | Varsayılan pencere boyutu (320×500) |
 | `CORNER_HIT` | `int` | Köşe çift-tık hassasiyeti (px) |
 | `OPS` | `frozenset` | Operatör karakterleri: `+  −  ×  ÷` |
@@ -439,7 +439,9 @@ Derlenmiş dosya `dist/` klasöründe oluşur.
 - Düzeltme: "Hakkında" penceresi güncelleme kontrolü sürerken kapatılınca program çökebiliyordu
 - Program, güncelleme kontrolü sürerken kapatılınca artık temiz kapanıyor
 - Kod düzeni: diyaloglar `ui/dialogs.py`'ye taşındı, tekrarlanan stiller `ui/theme.py`'de toplandı
-- `pytest` birim testleri eklendi
+- Tek kopya kontrolü pencere başlığı yerine yerel soket kullanır; pencere başlığı seçili dile çevrilir, macOS/Linux'ta da açık pencere öne gelir
+- Kapatılan diyaloglar bellekten silinir
+- `pytest` birim testleri ve GitHub Actions ile otomatik test eklendi
 
 ### v2.0.1 — 2026
 - Sürüm numarası güncellendi

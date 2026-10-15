@@ -6,10 +6,13 @@ CalculatorWindow — ana pencere.
   - Hesap geçmişi paneli: ⏱ butonu ile açılır/kapanır
   - Hata-disable: hata sonrası operatör/fonksiyon butonları grileşir
   - M göstergesi: bellek doluyken display üzerinde küçük "M" etiketi
-  - Tek-instance: WINDOW_TITLE sabiti üzerinden pencere bulunur
+  - Tek-instance: ikinci kopya, main.py'deki yerel soket üzerinden
+    bring_to_front() çağırır
 """
 
 from __future__ import annotations
+
+import sys
 
 from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
 from PyQt6.QtGui import (
@@ -25,7 +28,7 @@ from PyQt6.QtWidgets import (
 
 from core import (
     OPS, KEY_MAP, FUNCTIONS,
-    ThemeName, ORG, APP, DEFAULT_W, DEFAULT_H, CORNER_HIT, WINDOW_TITLE,
+    ThemeName, ORG, APP, DEFAULT_W, DEFAULT_H, CORNER_HIT,
     CalculatorEngine, CalculatorState,
     format_display_expr,
 )
@@ -84,7 +87,7 @@ class CalculatorWindow(QMainWindow):
         saved_lang = self._settings.value("language", "tr", type=str)
         set_language(saved_lang)
 
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle(t("app.title"))
         self.setWindowIcon(self._icon_for_theme(self._theme_name))
         self.resize(DEFAULT_W, DEFAULT_H)
         self.setMinimumSize(320, 500)
@@ -345,6 +348,7 @@ class CalculatorWindow(QMainWindow):
     def _set_language(self, lang: str) -> None:
         set_language(lang)
         self._settings.setValue("language", lang)
+        self.setWindowTitle(t("app.title"))
         self._settings_btn.setToolTip(t("tooltip.settings"))
         self._hist_btn.setToolTip(t("tooltip.history"))
         self._fly_title.setText(t("history.title"))
@@ -737,6 +741,19 @@ class CalculatorWindow(QMainWindow):
         """İndirme başlatır, progress penceresi gösterir."""
         self._downloader = run_download(
             self, THEMES[self._theme_name], new_version, download_url, digest)
+
+    def bring_to_front(self) -> None:
+        """Simge durumundaysa geri yükler ve pencereyi öne getirir."""
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if sys.platform == "win32":
+            # İkinci kopya AllowSetForegroundWindow ile izin verdiği için
+            # Windows burada pencereyi gerçekten öne alır.
+            import ctypes
+            ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
 
     # ── Pencere Olayları ──────────────────────────────────────────────────────
 
